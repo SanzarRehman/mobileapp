@@ -1,0 +1,61 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: main-application-test
+  
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  
+  flyway:
+    enabled: false
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: main-application-test
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 1
+
+axon:
+  axonserver:
+    enabled: false
+  
+  eventhandling:
+    processors:
+      default:
+        mode: subscribing
+
+app:
+  custom-server:
+    url: http://localhost:8081
+
+logging:
+  level:
+    com.example: DEBUG
+    org.axonframework: WARN
+    org.springframework.kafka: WARN
+    org.springframework.web: WARN
+    org.hibernate: WARN

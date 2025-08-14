@@ -1,0 +1,60 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+    hikari:
+      jdbc-url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL
+      username: sa
+      password: 
+      driver-class-name: org.h2.Driver
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        globally_quoted_identifiers: true
+
+  flyway:
+    enabled: false
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: test-custom-axon-server
+      auto-offset-reset: earliest
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+# Test Kafka topic configuration
+kafka:
+  topics:
+    events: test-axon-events
+    commands: test-axon-commands
+    snapshots: test-axon-snapshots
+    partitions: 2
+    replication-factor: 1
+
+# Test Axon snapshot configuration
+axon:
+  snapshot:
+    threshold: 10
+    retention:
+      days: 7
+    cleanup:
+      enabled: true
+
+logging:
+  level:
+    com.example: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.springframework.kafka: INFO
