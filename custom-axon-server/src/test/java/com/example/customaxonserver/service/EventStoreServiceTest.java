@@ -1,7 +1,10 @@
 package com.example.customaxonserver.service;
 
 import com.example.customaxonserver.entity.EventEntity;
+import com.example.customaxonserver.messaging.DeadLetterQueueHandler;
 import com.example.customaxonserver.repository.EventRepository;
+import com.example.customaxonserver.resilience.CircuitBreakerService;
+import com.example.customaxonserver.resilience.RetryService;
 import com.example.customaxonserver.service.EventStoreService.ConcurrencyException;
 import com.example.customaxonserver.service.EventStoreService.EventData;
 import com.example.customaxonserver.service.EventStoreService.EventStoreException;
@@ -42,9 +45,23 @@ class EventStoreServiceTest {
     private static final String AGGREGATE_TYPE = "TestAggregate";
     private static final String EVENT_TYPE = "TestEvent";
 
+    @Mock
+    private CircuitBreakerService circuitBreakerService;
+
+    @Mock
+    private RetryService retryService;
+
+    @Mock
+    private DeadLetterQueueHandler deadLetterQueueHandler;
+
+    @Mock
+    private ConcurrencyControlService concurrencyControlService;
+
     @BeforeEach
     void setUp() {
-        eventStoreService = new EventStoreService(eventRepository, objectMapper);
+        eventStoreService = new EventStoreService(eventRepository, objectMapper, 
+                                                 circuitBreakerService, retryService, 
+                                                 deadLetterQueueHandler, concurrencyControlService);
     }
 
     @Test
@@ -68,6 +85,8 @@ class EventStoreServiceTest {
         when(objectMapper.valueToTree(eventData)).thenReturn(eventDataNode);
         when(objectMapper.valueToTree(metadata)).thenReturn(metadataNode);
         when(eventRepository.save(any(EventEntity.class))).thenReturn(savedEvent);
+        when(concurrencyControlService.executeWithFullConcurrencyControl(eq(AGGREGATE_ID), any()))
+            .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
 
         // When
         EventEntity result = eventStoreService.storeEvent(AGGREGATE_ID, AGGREGATE_TYPE, 
@@ -175,6 +194,8 @@ class EventStoreServiceTest {
             new EventEntity(AGGREGATE_ID, AGGREGATE_TYPE, 1L, "Event1", eventDataNode1),
             new EventEntity(AGGREGATE_ID, AGGREGATE_TYPE, 2L, "Event2", eventDataNode2)
         ));
+        when(concurrencyControlService.executeWithFullConcurrencyControl(eq(AGGREGATE_ID), any()))
+            .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
 
         // When
         List<EventEntity> result = eventStoreService.storeEvents(AGGREGATE_ID, AGGREGATE_TYPE, 
@@ -200,6 +221,8 @@ class EventStoreServiceTest {
 
         when(eventRepository.findByAggregateIdOrderBySequenceNumber(AGGREGATE_ID))
             .thenReturn(expectedEvents);
+        when(concurrencyControlService.executeWithReadLock(eq(AGGREGATE_ID), any()))
+            .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
 
         // When
         List<EventEntity> result = eventStoreService.getEventsForAggregate(AGGREGATE_ID);

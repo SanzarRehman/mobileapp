@@ -83,7 +83,7 @@
   - Write tests for health check functionality
   - _Requirements: 5.1, 5.2, 5.3_
 
-- [ ] 12. Implement error handling and resilience patterns
+- [x] 12. Implement error handling and resilience patterns
   - Create global exception handlers for both applications
   - Implement circuit breaker pattern for external service calls
   - Add retry logic with exponential backoff for transient failures
@@ -99,7 +99,7 @@
   - Write integration tests for transaction consistency
   - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 14. Implement projection rebuilding capability
+- [x] 14. Implement projection rebuilding capability
   - Create projection rebuild service with event replay functionality
   - Add REST endpoints for triggering projection rebuilds
   - Implement progress tracking and status reporting for rebuilds
@@ -108,11 +108,7 @@
   - _Requirements: 7.3, 7.4_
 
 - [ ] 15. Add security and authentication
-  - Implement JWT-based authentication for API endpoints
-  - Create role-based authorization for commands and queries
-  - Add input validation and sanitization for all endpoints
-  - Configure HTTPS and secure communication between services
-  - Write security integration tests
+  - Implement JWT-based authentication with keycloak
   - _Requirements: 1.4, 4.4_
 
 - [ ] 16. Create comprehensive integration tests

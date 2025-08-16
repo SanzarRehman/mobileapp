@@ -12,6 +12,7 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import jakarta.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
@@ -68,12 +69,32 @@ public class DatabaseConfig {
 
     /**
      * Transaction manager for JPA operations.
+     * Configured for distributed transaction support.
      */
     @Bean
     @Primary
     public PlatformTransactionManager transactionManager(EntityManagerFactory entityManagerFactory) {
         JpaTransactionManager transactionManager = new JpaTransactionManager();
         transactionManager.setEntityManagerFactory(entityManagerFactory);
+        
+        // Configure for distributed transactions
+        transactionManager.setDefaultTimeout(30); // 30 seconds timeout
+        transactionManager.setRollbackOnCommitFailure(true);
+        transactionManager.setValidateExistingTransaction(true);
+        transactionManager.setGlobalRollbackOnParticipationFailure(true);
+        
         return transactionManager;
+    }
+
+    /**
+     * Transaction template for programmatic transaction management.
+     */
+    @Bean
+    public TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setTimeout(30);
+        template.setIsolationLevel(TransactionTemplate.ISOLATION_READ_COMMITTED);
+        template.setPropagationBehavior(TransactionTemplate.PROPAGATION_REQUIRED);
+        return template;
     }
 }

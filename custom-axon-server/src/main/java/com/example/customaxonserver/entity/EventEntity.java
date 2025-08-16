@@ -46,6 +46,10 @@ public class EventEntity {
     @Column(name = "timestamp", nullable = false)
     private OffsetDateTime timestamp;
 
+    @Version
+    @Column(name = "version")
+    private Long version;
+
     // Default constructor
     public EventEntity() {
         this.timestamp = OffsetDateTime.now();
@@ -127,6 +131,14 @@ public class EventEntity {
         this.timestamp = timestamp;
     }
 
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     @Override
     public String toString() {
         return "EventEntity{" +
@@ -136,6 +148,7 @@ public class EventEntity {
                 ", sequenceNumber=" + sequenceNumber +
                 ", eventType='" + eventType + '\'' +
                 ", timestamp=" + timestamp +
+                ", version=" + version +
                 '}';
     }
 }

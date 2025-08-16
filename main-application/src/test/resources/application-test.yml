@@ -10,6 +10,18 @@ spring:
     username: sa
     password: 
     driver-class-name: org.h2.Driver
+    hikari:
+      jdbc-url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+      username: sa
+      password: 
+      driver-class-name: org.h2.Driver
+      pool-name: TestCP
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
   
   jpa:
     hibernate:
@@ -18,6 +30,7 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
   
   flyway:
     enabled: false
@@ -37,7 +50,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      database: 1
+      database: 3
 
 axon:
   axonserver:
@@ -48,9 +61,15 @@ axon:
       default:
         mode: subscribing
 
-app:
-  custom-server:
-    url: http://localhost:8081
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
 
 logging:
   level:
@@ -58,4 +77,16 @@ logging:
     org.axonframework: WARN
     org.springframework.kafka: WARN
     org.springframework.web: WARN
+    org.springframework.boot.autoconfigure: WARN
     org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+app:
+  custom-server:
+    url: http://localhost:8081
+
+custom:
+  axon:
+    server:
+      url: http://localhost:8081

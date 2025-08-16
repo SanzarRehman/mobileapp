@@ -2,7 +2,11 @@ package com.example.customaxonserver.service;
 
 import com.example.customaxonserver.entity.EventEntity;
 import com.example.customaxonserver.entity.SnapshotEntity;
+import com.example.customaxonserver.exception.EventStoreException;
+import com.example.customaxonserver.messaging.DeadLetterQueueHandler;
 import com.example.customaxonserver.repository.EventRepository;
+import com.example.customaxonserver.resilience.CircuitBreakerService;
+import com.example.customaxonserver.resilience.RetryService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -29,12 +33,25 @@ public class EventStoreService {
 
     private final EventRepository eventRepository;
     private final ObjectMapper objectMapper;
+    private final CircuitBreakerService circuitBreakerService;
+    private final RetryService retryService;
+    private final DeadLetterQueueHandler deadLetterQueueHandler;
+    private final ConcurrencyControlService concurrencyControlService;
     private SnapshotService snapshotService;
 
     @Autowired
-    public EventStoreService(EventRepository eventRepository, ObjectMapper objectMapper) {
+    public EventStoreService(EventRepository eventRepository, 
+                           ObjectMapper objectMapper,
+                           CircuitBreakerService circuitBreakerService,
+                           RetryService retryService,
+                           DeadLetterQueueHandler deadLetterQueueHandler,
+                           ConcurrencyControlService concurrencyControlService) {
         this.eventRepository = eventRepository;
         this.objectMapper = objectMapper;
+        this.circuitBreakerService = circuitBreakerService;
+        this.retryService = retryService;
+        this.deadLetterQueueHandler = deadLetterQueueHandler;
+        this.concurrencyControlService = concurrencyControlService;
     }
 
     /**
@@ -66,41 +83,43 @@ public class EventStoreService {
         
         logger.debug("Storing event for aggregate {} with sequence {}", aggregateId, expectedSequenceNumber);
         
-        try {
-            // Verify expected sequence number for optimistic locking
-            Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
-            if (!expectedSequenceNumber.equals(currentSequenceNumber + 1)) {
-                throw new ConcurrencyException(
-                    String.format("Expected sequence number %d but current is %d for aggregate %s", 
-                                expectedSequenceNumber, currentSequenceNumber, aggregateId));
+        return concurrencyControlService.executeWithFullConcurrencyControl(aggregateId, () -> {
+            try {
+                // Verify expected sequence number for optimistic locking
+                Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
+                if (!expectedSequenceNumber.equals(currentSequenceNumber + 1)) {
+                    throw new ConcurrencyException(
+                        String.format("Expected sequence number %d but current is %d for aggregate %s", 
+                                    expectedSequenceNumber, currentSequenceNumber, aggregateId));
+                }
+
+                // Convert event data and metadata to JsonNode
+                JsonNode eventDataNode = objectMapper.valueToTree(eventData);
+                JsonNode metadataNode = metadata != null ? objectMapper.valueToTree(metadata) : null;
+
+                // Create and save event entity
+                EventEntity eventEntity = new EventEntity(aggregateId, aggregateType, 
+                                                        expectedSequenceNumber, eventType, eventDataNode);
+                eventEntity.setMetadata(metadataNode);
+                
+                EventEntity savedEvent = eventRepository.save(eventEntity);
+                
+                logger.info("Successfully stored event {} for aggregate {} with sequence {}", 
+                           eventType, aggregateId, expectedSequenceNumber);
+                
+                return savedEvent;
+                
+            } catch (ConcurrencyException e) {
+                // Re-throw concurrency exceptions as-is
+                throw e;
+            } catch (DataIntegrityViolationException e) {
+                logger.error("Concurrency violation when storing event for aggregate {}", aggregateId, e);
+                throw new ConcurrencyException("Concurrent modification detected for aggregate " + aggregateId, e);
+            } catch (Exception e) {
+                logger.error("Failed to store event for aggregate {}", aggregateId, e);
+                throw new EventStoreException("Failed to store event for aggregate " + aggregateId, e);
             }
-
-            // Convert event data and metadata to JsonNode
-            JsonNode eventDataNode = objectMapper.valueToTree(eventData);
-            JsonNode metadataNode = metadata != null ? objectMapper.valueToTree(metadata) : null;
-
-            // Create and save event entity
-            EventEntity eventEntity = new EventEntity(aggregateId, aggregateType, 
-                                                    expectedSequenceNumber, eventType, eventDataNode);
-            eventEntity.setMetadata(metadataNode);
-            
-            EventEntity savedEvent = eventRepository.save(eventEntity);
-            
-            logger.info("Successfully stored event {} for aggregate {} with sequence {}", 
-                       eventType, aggregateId, expectedSequenceNumber);
-            
-            return savedEvent;
-            
-        } catch (ConcurrencyException e) {
-            // Re-throw concurrency exceptions as-is
-            throw e;
-        } catch (DataIntegrityViolationException e) {
-            logger.error("Concurrency violation when storing event for aggregate {}", aggregateId, e);
-            throw new ConcurrencyException("Concurrent modification detected for aggregate " + aggregateId, e);
-        } catch (Exception e) {
-            logger.error("Failed to store event for aggregate {}", aggregateId, e);
-            throw new EventStoreException("Failed to store event for aggregate " + aggregateId, e);
-        }
+        });
     }
 
     /**
@@ -121,47 +140,49 @@ public class EventStoreService {
         logger.debug("Storing {} events for aggregate {} starting at sequence {}", 
                     events.size(), aggregateId, startingSequenceNumber);
         
-        try {
-            // Verify expected sequence number for optimistic locking
-            Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
-            if (!startingSequenceNumber.equals(currentSequenceNumber + 1)) {
-                throw new ConcurrencyException(
-                    String.format("Expected starting sequence number %d but current is %d for aggregate %s", 
-                                startingSequenceNumber, currentSequenceNumber, aggregateId));
-            }
+        return concurrencyControlService.executeWithFullConcurrencyControl(aggregateId, () -> {
+            try {
+                // Verify expected sequence number for optimistic locking
+                Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
+                if (!startingSequenceNumber.equals(currentSequenceNumber + 1)) {
+                    throw new ConcurrencyException(
+                        String.format("Expected starting sequence number %d but current is %d for aggregate %s", 
+                                    startingSequenceNumber, currentSequenceNumber, aggregateId));
+                }
 
-            List<EventEntity> eventEntities = new java.util.ArrayList<>();
-            Long sequenceNumber = startingSequenceNumber;
-            
-            for (EventData eventData : events) {
-                JsonNode eventDataNode = objectMapper.valueToTree(eventData.getPayload());
-                JsonNode metadataNode = eventData.getMetadata() != null ? 
-                                      objectMapper.valueToTree(eventData.getMetadata()) : null;
+                List<EventEntity> eventEntities = new java.util.ArrayList<>();
+                Long sequenceNumber = startingSequenceNumber;
+                
+                for (EventData eventData : events) {
+                    JsonNode eventDataNode = objectMapper.valueToTree(eventData.getPayload());
+                    JsonNode metadataNode = eventData.getMetadata() != null ? 
+                                          objectMapper.valueToTree(eventData.getMetadata()) : null;
 
-                EventEntity eventEntity = new EventEntity(aggregateId, aggregateType, 
-                                                        sequenceNumber, eventData.getEventType(), eventDataNode);
-                eventEntity.setMetadata(metadataNode);
-                eventEntities.add(eventEntity);
-                sequenceNumber++;
+                    EventEntity eventEntity = new EventEntity(aggregateId, aggregateType, 
+                                                            sequenceNumber, eventData.getEventType(), eventDataNode);
+                    eventEntity.setMetadata(metadataNode);
+                    eventEntities.add(eventEntity);
+                    sequenceNumber++;
+                }
+                
+                List<EventEntity> savedEvents = eventRepository.saveAll(eventEntities);
+                
+                logger.info("Successfully stored {} events for aggregate {} starting at sequence {}", 
+                           events.size(), aggregateId, startingSequenceNumber);
+                
+                return savedEvents;
+                
+            } catch (ConcurrencyException e) {
+                // Re-throw concurrency exceptions as-is
+                throw e;
+            } catch (DataIntegrityViolationException e) {
+                logger.error("Concurrency violation when storing events for aggregate {}", aggregateId, e);
+                throw new ConcurrencyException("Concurrent modification detected for aggregate " + aggregateId, e);
+            } catch (Exception e) {
+                logger.error("Failed to store events for aggregate {}", aggregateId, e);
+                throw new EventStoreException("Failed to store events for aggregate " + aggregateId, e);
             }
-            
-            List<EventEntity> savedEvents = eventRepository.saveAll(eventEntities);
-            
-            logger.info("Successfully stored {} events for aggregate {} starting at sequence {}", 
-                       events.size(), aggregateId, startingSequenceNumber);
-            
-            return savedEvents;
-            
-        } catch (ConcurrencyException e) {
-            // Re-throw concurrency exceptions as-is
-            throw e;
-        } catch (DataIntegrityViolationException e) {
-            logger.error("Concurrency violation when storing events for aggregate {}", aggregateId, e);
-            throw new ConcurrencyException("Concurrent modification detected for aggregate " + aggregateId, e);
-        } catch (Exception e) {
-            logger.error("Failed to store events for aggregate {}", aggregateId, e);
-            throw new EventStoreException("Failed to store events for aggregate " + aggregateId, e);
-        }
+        });
     }
 
     /**
@@ -174,10 +195,11 @@ public class EventStoreService {
     public List<EventEntity> getEventsForAggregate(String aggregateId) {
         logger.debug("Retrieving all events for aggregate {}", aggregateId);
         
-        List<EventEntity> events = eventRepository.findByAggregateIdOrderBySequenceNumber(aggregateId);
-        
-        logger.debug("Retrieved {} events for aggregate {}", events.size(), aggregateId);
-        return events;
+        return concurrencyControlService.executeWithReadLock(aggregateId, () -> {
+            List<EventEntity> events = eventRepository.findByAggregateIdOrderBySequenceNumber(aggregateId);
+            logger.debug("Retrieved {} events for aggregate {}", events.size(), aggregateId);
+            return events;
+        });
     }
 
     /**
