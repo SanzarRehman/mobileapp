@@ -104,3 +104,13 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+# Keycloak Configuration
+keycloak:
+  auth-server-url: http://localhost:8180/auth
+  realm: axon-realm
+  resource: custom-axon-server
+  credentials:
+    secret: ${KEYCLOAK_CLIENT_SECRET:your-server-secret}
+  use-resource-role-mappings: true
+  bearer-only: true

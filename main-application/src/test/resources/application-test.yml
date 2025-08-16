@@ -90,3 +90,13 @@ custom:
   axon:
     server:
       url: http://localhost:8081
+
+# Keycloak Configuration for testing
+keycloak:
+  auth-server-url: http://localhost:8180/auth
+  realm: axon-realm-test
+  resource: main-application-test
+  credentials:
+    secret: test-secret
+  use-resource-role-mappings: true
+  bearer-only: true

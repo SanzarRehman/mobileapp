@@ -2,6 +2,7 @@ package com.example.mainapplication.config;
 
 import com.example.mainapplication.interceptor.CommandLoggingInterceptor;
 import com.example.mainapplication.interceptor.CommandValidationInterceptor;
+import com.example.mainapplication.interceptor.SecurityInterceptor;
 import org.axonframework.commandhandling.CommandBus;
 import org.axonframework.commandhandling.SimpleCommandBus;
 import org.axonframework.commandhandling.gateway.CommandGateway;
@@ -19,11 +20,14 @@ public class AxonConfig {
 
     private final CommandValidationInterceptor validationInterceptor;
     private final CommandLoggingInterceptor loggingInterceptor;
+    private final SecurityInterceptor securityInterceptor;
 
     public AxonConfig(CommandValidationInterceptor validationInterceptor, 
-                     CommandLoggingInterceptor loggingInterceptor) {
+                     CommandLoggingInterceptor loggingInterceptor,
+                     SecurityInterceptor securityInterceptor) {
         this.validationInterceptor = validationInterceptor;
         this.loggingInterceptor = loggingInterceptor;
+        this.securityInterceptor = securityInterceptor;
     }
 
     /**
@@ -35,6 +39,9 @@ public class AxonConfig {
         
         // Add custom validation interceptor
         commandBus.registerDispatchInterceptor(validationInterceptor);
+        
+        // Add security interceptor
+        commandBus.registerHandlerInterceptor(securityInterceptor);
         
         // Add custom logging interceptor
         commandBus.registerHandlerInterceptor(loggingInterceptor);
@@ -52,11 +59,5 @@ public class AxonConfig {
                 .build();
     }
 
-    /**
-     * RestTemplate for HTTP communication with custom server.
-     */
-    @Bean
-    public RestTemplate restTemplate() {
-        return new RestTemplate();
-    }
+
 }

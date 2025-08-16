@@ -1,0 +1,146 @@
+{
+  "realm": "axon-realm",
+  "enabled": true,
+  "displayName": "Axon Framework Realm",
+  "displayNameHtml": "<div class=\"kc-logo-text\"><span>Axon Framework</span></div>",
+  "accessTokenLifespan": 3600,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "actionTokenGeneratedByAdminLifespan": 43200,
+  "actionTokenGeneratedByUserLifespan": 300,
+  "oauth2DeviceCodeLifespan": 600,
+  "oauth2DevicePollingInterval": 5,
+  "clients": [
+    {
+      "clientId": "main-application",
+      "name": "Main Application",
+      "description": "Main Spring Boot application using Axon Framework",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "main-app-secret",
+      "redirectUris": ["http://localhost:8080/*"],
+      "webOrigins": ["http://localhost:8080"],
+      "bearerOnly": true,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "custom-axon-server",
+      "name": "Custom Axon Server",
+      "description": "Custom Axon Server implementation",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "server-secret",
+      "redirectUris": ["http://localhost:8081/*"],
+      "webOrigins": ["http://localhost:8081"],
+      "bearerOnly": true,
+      "serviceAccountsEnabled": true,
+      "publicClient": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "foo",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "USER",
+        "description": "Standard user role for accessing application features"
+      },
+      {
+        "name": "ADMIN",
+        "description": "Administrator role with full access"
+      },
+      {
+        "name": "SERVICE",
+        "description": "Service role for inter-service communication"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "testuser@example.com",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["USER"]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@example.com",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["USER", "ADMIN"]
+    },
+    {
+      "username": "service-account-main-application",
+      "enabled": true,
+      "serviceAccountClientId": "main-application",
+      "realmRoles": ["SERVICE"]
+    },
+    {
+      "username": "service-account-custom-axon-server",
+      "enabled": true,
+      "serviceAccountClientId": "custom-axon-server",
+      "realmRoles": ["SERVICE"]
+    }
+  ]
+}

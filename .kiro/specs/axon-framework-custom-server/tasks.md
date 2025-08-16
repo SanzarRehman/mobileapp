@@ -107,7 +107,7 @@
   - Write integration tests for projection rebuild scenarios
   - _Requirements: 7.3, 7.4_
 
-- [ ] 15. Add security and authentication
+- [x] 15. Add security and authentication
   - Implement JWT-based authentication with keycloak
   - _Requirements: 1.4, 4.4_
 

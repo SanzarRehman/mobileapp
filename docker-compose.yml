@@ -134,11 +134,43 @@ services:
     networks:
       - axon-network
 
+  # Keycloak for authentication
+  keycloak:
+    image: quay.io/keycloak/keycloak:21.1.2
+    container_name: axon-keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: axon_user
+      KC_DB_PASSWORD: axon_password
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8180
+      KC_HTTP_ENABLED: true
+      KC_HOSTNAME_STRICT_HTTPS: false
+    ports:
+      - "8180:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: start-dev
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+    networks:
+      - axon-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   prometheus_data:
   grafana_data:
+  keycloak_data:
 
 networks:
   axon-network:
