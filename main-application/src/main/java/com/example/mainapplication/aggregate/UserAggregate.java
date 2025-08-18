@@ -9,6 +9,8 @@ import org.axonframework.eventsourcing.EventSourcingHandler;
 import org.axonframework.modelling.command.AggregateIdentifier;
 import org.axonframework.modelling.command.AggregateLifecycle;
 import org.axonframework.spring.stereotype.Aggregate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -20,6 +22,8 @@ import java.util.Objects;
  */
 @Aggregate
 public class UserAggregate {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserAggregate.class);
 
     @AggregateIdentifier
     private String userId;
@@ -40,20 +44,41 @@ public class UserAggregate {
      */
     @CommandHandler
     public UserAggregate(CreateUserCommand command) {
-        // Business rule validation
-        validateUsername(command.getUsername());
-        validateEmail(command.getEmail());
-        validateFullName(command.getFullName());
+        logger.info("🎯 UserAggregate: ===== COMMAND HANDLER TRIGGERED! =====");
+        logger.info("🎯 UserAggregate: Handling CreateUserCommand for userId: {}", command.getUserId());
+        logger.info("🎯 UserAggregate: Command details: {}", command);
+        logger.info("🎯 UserAggregate: Command class: {}", command.getClass().getName());
+        
+        try {
+            // Business rule validation
+            logger.info("🎯 UserAggregate: Starting validation for userId: {}", command.getUserId());
+            validateUsername(command.getUsername());
+            validateEmail(command.getEmail());
+            validateFullName(command.getFullName());
+            logger.info("🎯 UserAggregate: Validation passed for userId: {}", command.getUserId());
 
-        // Apply the event
-        Instant now = Instant.now();
-        AggregateLifecycle.apply(new UserCreatedEvent(
-                command.getUserId(),
-                command.getUsername(),
-                command.getEmail(),
-                command.getFullName(),
-                now
-        ));
+            // Apply the event
+            Instant now = Instant.now();
+            logger.info("🎯 UserAggregate: About to apply UserCreatedEvent for userId: {}", command.getUserId());
+            
+            UserCreatedEvent event = new UserCreatedEvent(
+                    command.getUserId(),
+                    command.getUsername(),
+                    command.getEmail(),
+                    command.getFullName(),
+                    now
+            );
+            
+            logger.info("🎯 UserAggregate: Created event: {}", event);
+            
+            AggregateLifecycle.apply(event);
+            
+            logger.info("🎯 UserAggregate: ✅ Successfully applied UserCreatedEvent for userId: {}", command.getUserId());
+            
+        } catch (Exception e) {
+            logger.error("🎯 UserAggregate: ❌ Error in command handler: {}", e.getMessage(), e);
+            throw e;
+        }
     }
 
     /**
@@ -62,6 +87,8 @@ public class UserAggregate {
      */
     @CommandHandler
     public void handle(UpdateUserCommand command) {
+        logger.info("🎯 UserAggregate: Handling UpdateUserCommand for userId: {}", command.getUserId());
+        
         // Business rule validation
         if (!this.active) {
             throw new IllegalStateException("Cannot update inactive user: " + command.getUserId());
@@ -81,6 +108,8 @@ public class UserAggregate {
 
         // Apply the event
         Instant now = Instant.now();
+        logger.info("🎯 UserAggregate: About to apply UserUpdatedEvent for userId: {}", command.getUserId());
+        
         AggregateLifecycle.apply(new UserUpdatedEvent(
                 command.getUserId(),
                 command.getUsername(),
@@ -88,6 +117,8 @@ public class UserAggregate {
                 command.getFullName(),
                 now
         ));
+        
+        logger.info("🎯 UserAggregate: Successfully applied UserUpdatedEvent for userId: {}", command.getUserId());
     }
 
     /**
@@ -96,6 +127,8 @@ public class UserAggregate {
      */
     @EventSourcingHandler
     public void on(UserCreatedEvent event) {
+        logger.info("🎯 UserAggregate: Handling UserCreatedEvent for userId: {}", event.getUserId());
+        
         this.userId = event.getUserId();
         this.username = event.getUsername();
         this.email = event.getEmail();
@@ -103,6 +136,8 @@ public class UserAggregate {
         this.active = true;
         this.createdAt = event.getCreatedAt();
         this.updatedAt = event.getCreatedAt();
+        
+        logger.info("🎯 UserAggregate: Successfully processed UserCreatedEvent for userId: {}", event.getUserId());
     }
 
     /**
