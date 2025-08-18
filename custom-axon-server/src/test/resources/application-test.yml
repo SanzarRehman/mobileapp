@@ -22,6 +22,7 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       leak-detection-threshold: 60000
+      auto-commit: false  # Ensure transactional commits are managed by Spring/Hibernate
   
   jpa:
     hibernate:
@@ -31,6 +32,8 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
         format_sql: true
+        connection:
+          provider_disables_autocommit: true
   
   flyway:
     enabled: false

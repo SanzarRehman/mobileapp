@@ -83,6 +83,8 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
 
 app:
+  event-forwarding:
+    enabled: false
   custom-server:
     url: http://localhost:8081
 

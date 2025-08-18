@@ -4,11 +4,9 @@ import com.example.customaxonserver.exception.EventStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.OptimisticLockingFailureException;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,7 +36,6 @@ public class ConcurrencyControlService {
     )
     @Transactional(
         propagation = Propagation.REQUIRED,
-        isolation = Isolation.READ_COMMITTED,
         rollbackFor = Exception.class
     )
     public <T> T executeWithOptimisticLocking(String aggregateId, Supplier<T> operation) {
@@ -97,7 +94,6 @@ public class ConcurrencyControlService {
     )
     @Transactional(
         propagation = Propagation.REQUIRED,
-        isolation = Isolation.READ_COMMITTED,
         rollbackFor = Exception.class
     )
     public <T> T executeWithFullConcurrencyControl(String aggregateId, Supplier<T> operation) {

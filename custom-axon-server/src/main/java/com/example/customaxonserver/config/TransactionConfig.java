@@ -1,18 +1,15 @@
 package com.example.customaxonserver.config;
 
-import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
- * Configuration for distributed transaction management.
- * Provides transaction coordination across multiple resources.
+ * Utility methods for inspecting Spring transaction state.
  */
-@Configuration
-@EnableTransactionManagement
-public class TransactionConfig {
+public final class TransactionConfig {
 
-
+    private TransactionConfig() {
+        // Utility class; prevent instantiation
+    }
 
     /**
      * Utility method to check if a transaction is active.

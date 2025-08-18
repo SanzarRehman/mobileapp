@@ -16,6 +16,9 @@ import org.springframework.web.client.RestTemplate;
 import java.util.HashMap;
 import java.util.Map;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+
 /**
  * Service for publishing events to the custom axon server.
  * This service sends events from the main application to the custom server for persistence and distribution.
@@ -38,6 +41,8 @@ public class CustomServerEventPublisher {
     /**
      * Publishes an event to the custom server for persistence and distribution.
      */
+    @Retry(name = "eventForwarding")
+    @CircuitBreaker(name = "eventForwarding", fallbackMethod = "publishEventFallback")
     public void publishEvent(EventMessage<?> eventMessage) {
         try {
             logger.debug("Publishing event {} to custom server", eventMessage.getPayloadType().getSimpleName());
@@ -67,6 +72,12 @@ public class CustomServerEventPublisher {
                         eventMessage.getIdentifier(), e.getMessage(), e);
             // Don't throw exception to avoid breaking the main flow
         }
+    }
+
+    @SuppressWarnings("unused")
+    private void publishEventFallback(EventMessage<?> eventMessage, Throwable t) {
+        logger.warn("Falling back while publishing event {} due to: {}",
+                eventMessage.getIdentifier(), t.toString());
     }
 
     /**

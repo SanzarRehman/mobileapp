@@ -86,10 +86,13 @@ public class EventStoreService {
         return concurrencyControlService.executeWithFullConcurrencyControl(aggregateId, () -> {
             try {
                 // Verify expected sequence number for optimistic locking
-                Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
-                if (!expectedSequenceNumber.equals(currentSequenceNumber + 1)) {
+                long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
+                long expected = expectedSequenceNumber;
+                boolean validFirstInsert = (currentSequenceNumber == 0 && expected == 0);
+                boolean validNext = (expected == currentSequenceNumber + 1);
+                if (!(validFirstInsert || validNext)) {
                     throw new ConcurrencyException(
-                        String.format("Expected sequence number %d but current is %d for aggregate %s", 
+                        String.format("Expected sequence number %d (or 0 on first insert) but current is %d for aggregate %s", 
                                     expectedSequenceNumber, currentSequenceNumber, aggregateId));
                 }
 
@@ -143,10 +146,13 @@ public class EventStoreService {
         return concurrencyControlService.executeWithFullConcurrencyControl(aggregateId, () -> {
             try {
                 // Verify expected sequence number for optimistic locking
-                Long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
-                if (!startingSequenceNumber.equals(currentSequenceNumber + 1)) {
+                long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
+                long starting = startingSequenceNumber;
+                boolean validFirstInsert = (currentSequenceNumber == 0 && starting == 0);
+                boolean validNext = (starting == currentSequenceNumber + 1);
+                if (!(validFirstInsert || validNext)) {
                     throw new ConcurrencyException(
-                        String.format("Expected starting sequence number %d but current is %d for aggregate %s", 
+                        String.format("Expected starting sequence number %d (or 0 on first insert) but current is %d for aggregate %s", 
                                     startingSequenceNumber, currentSequenceNumber, aggregateId));
                 }
 
@@ -243,6 +249,7 @@ public class EventStoreService {
      */
     @Transactional(readOnly = true)
     public Long getNextSequenceNumber(String aggregateId) {
+        //return 0L;
         return getCurrentSequenceNumber(aggregateId) + 1;
     }
 
