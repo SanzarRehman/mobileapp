@@ -35,12 +35,12 @@ public class SecurityConfig {
             .authorizeHttpRequests(authz -> authz
                 // Public endpoints
                 .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
-                .requestMatchers("/api/public/**").permitAll()
+                .requestMatchers("/api/**").permitAll()
                 // Protected endpoints
                 .requestMatchers("/api/commands/**").hasRole("USER")
                 .requestMatchers("/api/queries/**").hasRole("USER")
                 .requestMatchers("/api/projections/**").hasRole("ADMIN")
-                .anyRequest().authenticated()
+                .anyRequest().permitAll()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt

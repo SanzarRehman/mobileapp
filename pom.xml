@@ -23,7 +23,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
         <spring-boot.version>3.2.0</spring-boot.version>
-        <axon.version>4.9.1</axon.version>
+        <axon.version>4.12.1</axon.version>
         <postgresql.version>42.7.1</postgresql.version>
         <testcontainers.version>1.19.3</testcontainers.version>
     </properties>
@@ -50,7 +50,11 @@
                 <artifactId>axon-test</artifactId>
                 <version>${axon.version}</version>
             </dependency>
-            
+            <dependency>
+                <groupId>org.axonframework</groupId>
+                <artifactId>axon-eventsourcing</artifactId>
+                <version>${axon.version}</version>
+            </dependency>
             <!-- PostgreSQL -->
             <dependency>
                 <groupId>org.postgresql</groupId>

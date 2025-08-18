@@ -5,7 +5,8 @@ import com.example.mainapplication.command.UpdateUserCommand;
 import com.example.mainapplication.dto.CreateUserRequest;
 import com.example.mainapplication.dto.UpdateUserRequest;
 import com.example.mainapplication.dto.CommandResponse;
-import org.axonframework.commandhandling.gateway.CommandGateway;
+import com.example.mainapplication.service.CustomServerCommandService;
+import org.axonframework.commandhandling.GenericCommandMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,10 +27,10 @@ import java.util.concurrent.CompletableFuture;
 public class UserCommandController {
 
     private static final Logger logger = LoggerFactory.getLogger(UserCommandController.class);
-    private final CommandGateway commandGateway;
+    private final CustomServerCommandService customServerCommandService;
 
-    public UserCommandController(CommandGateway commandGateway) {
-        this.commandGateway = commandGateway;
+    public UserCommandController(CustomServerCommandService customServerCommandService) {
+        this.customServerCommandService = customServerCommandService;
     }
 
     /**
@@ -49,25 +50,30 @@ public class UserCommandController {
                 request.getFullName()
         );
 
-        return commandGateway.send(command)
-                .thenApply(result -> {
-                    logger.info("User created successfully with ID: {}", userId);
-                    CommandResponse response = new CommandResponse(
-                            userId,
-                            "User created successfully",
-                            true
-                    );
-                    return ResponseEntity.status(HttpStatus.CREATED).body(response);
-                })
-                .exceptionally(throwable -> {
-                    logger.error("Error creating user: {}", throwable.getMessage(), throwable);
-                    CommandResponse response = new CommandResponse(
-                            userId,
-                            "Error creating user: " + throwable.getMessage(),
-                            false
-                    );
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-                });
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Route command to custom server
+                var commandMessage = GenericCommandMessage.asCommandMessage(command);
+                customServerCommandService.routeCommand(commandMessage, String.class);
+                
+                logger.info("User created successfully with ID: {}", userId);
+                CommandResponse response = new CommandResponse(
+                        userId,
+                        "User created successfully",
+                        true
+                );
+                return ResponseEntity.status(HttpStatus.CREATED).body(response);
+                
+            } catch (Exception e) {
+                logger.error("Error creating user: {}", e.getMessage(), e);
+                CommandResponse response = new CommandResponse(
+                        userId,
+                        "Error creating user: " + e.getMessage(),
+                        false
+                );
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+        });
     }
 
     /**
@@ -87,24 +93,29 @@ public class UserCommandController {
                 request.getFullName()
         );
 
-        return commandGateway.send(command)
-                .thenApply(result -> {
-                    logger.info("User updated successfully with ID: {}", userId);
-                    CommandResponse response = new CommandResponse(
-                            userId,
-                            "User updated successfully",
-                            true
-                    );
-                    return ResponseEntity.ok(response);
-                })
-                .exceptionally(throwable -> {
-                    logger.error("Error updating user: {}", throwable.getMessage(), throwable);
-                    CommandResponse response = new CommandResponse(
-                            userId,
-                            "Error updating user: " + throwable.getMessage(),
-                            false
-                    );
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-                });
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                // Route command to custom server
+                var commandMessage = GenericCommandMessage.asCommandMessage(command);
+                customServerCommandService.routeCommand(commandMessage, String.class);
+                
+                logger.info("User updated successfully with ID: {}", userId);
+                CommandResponse response = new CommandResponse(
+                        userId,
+                        "User updated successfully",
+                        true
+                );
+                return ResponseEntity.ok(response);
+                
+            } catch (Exception e) {
+                logger.error("Error updating user: {}", e.getMessage(), e);
+                CommandResponse response = new CommandResponse(
+                        userId,
+                        "Error updating user: " + e.getMessage(),
+                        false
+                );
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+            }
+        });
     }
 }

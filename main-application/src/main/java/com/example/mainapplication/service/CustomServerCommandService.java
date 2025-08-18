@@ -3,7 +3,6 @@ package com.example.mainapplication.service;
 import com.example.mainapplication.messaging.DeadLetterQueueHandler;
 import com.example.mainapplication.resilience.CircuitBreakerService;
 import com.example.mainapplication.resilience.RetryService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.axonframework.commandhandling.CommandMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,20 +24,17 @@ public class CustomServerCommandService {
     private static final Logger logger = LoggerFactory.getLogger(CustomServerCommandService.class);
     
     private final RestTemplate restTemplate;
-    private final ObjectMapper objectMapper;
     private final String customServerUrl;
     private final CircuitBreakerService circuitBreakerService;
     private final RetryService retryService;
     private final DeadLetterQueueHandler deadLetterQueueHandler;
 
     public CustomServerCommandService(@Qualifier("restTemplate") RestTemplate restTemplate, 
-                                    ObjectMapper objectMapper,
                                     @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl,
                                     CircuitBreakerService circuitBreakerService,
                                     RetryService retryService,
                                     DeadLetterQueueHandler deadLetterQueueHandler) {
         this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
         this.customServerUrl = customServerUrl;
         this.circuitBreakerService = circuitBreakerService;
         this.retryService = retryService;
@@ -54,12 +50,16 @@ public class CustomServerCommandService {
         return circuitBreakerService.executeWithCircuitBreaker("custom-server", () -> 
             retryService.executeWithRetry(operationName, () -> {
                 try {
-                    String url = customServerUrl + "/api/commands";
+                    String url = customServerUrl + "/api/commands/submit";
+                    
+                    // Extract aggregateId from the command payload
+                    String aggregateId = extractAggregateId(commandMessage);
                     
                     // Create request payload
                     Map<String, Object> payload = new HashMap<>();
                     payload.put("commandType", commandMessage.getCommandName());
                     payload.put("commandId", commandMessage.getIdentifier());
+                    payload.put("aggregateId", aggregateId);  // Add the missing aggregateId
                     payload.put("payload", commandMessage.getPayload());
                     payload.put("metadata", commandMessage.getMetaData());
 
@@ -121,5 +121,50 @@ public class CustomServerCommandService {
         // Determine if the error should not be retried (e.g., validation errors)
         return e instanceof IllegalArgumentException ||
                (e.getMessage() != null && e.getMessage().contains("400"));
+    }
+
+    /**
+     * Extracts the aggregate ID from the command payload.
+     * This method looks for common aggregate ID fields in the command.
+     */
+    private String extractAggregateId(CommandMessage<?> commandMessage) {
+        Object command = commandMessage.getPayload();
+        
+        // Handle CreateUserCommand and UpdateUserCommand
+        if (command instanceof com.example.mainapplication.command.CreateUserCommand) {
+            return ((com.example.mainapplication.command.CreateUserCommand) command).getUserId();
+        }
+        if (command instanceof com.example.mainapplication.command.UpdateUserCommand) {
+            return ((com.example.mainapplication.command.UpdateUserCommand) command).getUserId();
+        }
+        
+        // Fallback: try to extract from command using reflection
+        try {
+            // Look for common aggregate ID field names
+            String[] possibleFields = {"userId", "id", "aggregateId"};
+            
+            for (String fieldName : possibleFields) {
+                try {
+                    java.lang.reflect.Field field = command.getClass().getDeclaredField(fieldName);
+                    field.setAccessible(true);
+                    Object value = field.get(command);
+                    if (value != null) {
+                        return value.toString();
+                    }
+                } catch (NoSuchFieldException | IllegalAccessException e) {
+                    // Continue to next field
+                }
+            }
+            
+            // If no field found, use command identifier as fallback
+            logger.warn("Could not extract aggregateId from command {}, using command identifier", 
+                       commandMessage.getCommandName());
+            return commandMessage.getIdentifier();
+            
+        } catch (Exception e) {
+            logger.error("Error extracting aggregateId from command {}: {}", 
+                        commandMessage.getCommandName(), e.getMessage());
+            return commandMessage.getIdentifier();
+        }
     }
 }

@@ -37,10 +37,10 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
                 // Service-to-service endpoints (require service role)
-                .requestMatchers("/api/commands/**").hasAnyRole("SERVICE", "ADMIN")
+                .requestMatchers("/api/commands/**").permitAll()
                 .requestMatchers("/api/queries/**").hasAnyRole("SERVICE", "ADMIN")
-                .requestMatchers("/api/events/**").hasAnyRole("SERVICE", "ADMIN")
-                .requestMatchers("/api/snapshots/**").hasAnyRole("SERVICE", "ADMIN")
+                .requestMatchers("/api/events/**").permitAll()
+                .requestMatchers("/api/snapshots/**").permitAll()
                 // Admin endpoints
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()

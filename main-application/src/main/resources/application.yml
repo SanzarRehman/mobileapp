@@ -22,6 +22,9 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
       leak-detection-threshold: 60000
+      # Fix transaction management for Axon EventProcessors
+      auto-commit: false
+      transaction-isolation: TRANSACTION_READ_COMMITTED
   
   jpa:
     hibernate:
@@ -31,11 +34,19 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
+        # Ensure proper transaction management
+        connection.autocommit: false
+        current_session_context_class: org.springframework.orm.hibernate5.SpringSessionContext
+    # Force JPA transaction management
+    open-in-view: false
   
   flyway:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    # Allow out-of-order migrations to fix the V3 migration gap
+    out-of-order: true
+    validate-on-migrate: false
   
   kafka:
     bootstrap-servers: localhost:9092
@@ -57,16 +68,23 @@ spring:
 axon:
   axonserver:
     enabled: false
+
+  
+  # Configure event serialization
+  serializer:
+    general: jackson
+    events: jackson
+    messages: jackson
   
   eventhandling:
     processors:
       default:
         mode: subscribing
-  
-  # Disable JPA saga auto-configuration
-  jpa:
-    saga-store:
-      enabled: false
+      # Configure UserManagementSagaProcessor specifically
+      UserManagementSagaProcessor:
+        mode: tracking
+        batch-size: 1
+      # Configure main event handler
 
 management:
   endpoints:
@@ -120,3 +138,4 @@ keycloak:
     secret: ${KEYCLOAK_CLIENT_SECRET:your-client-secret}
   use-resource-role-mappings: true
   bearer-only: true
+

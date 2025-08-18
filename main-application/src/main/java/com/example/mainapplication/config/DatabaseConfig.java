@@ -62,6 +62,10 @@ public class DatabaseConfig {
         config.setMaxLifetime(1800000);
         config.setLeakDetectionThreshold(60000);
         
+        // Fix for EventProcessor rollback issues
+        config.setAutoCommit(false);
+        config.setTransactionIsolation("TRANSACTION_READ_COMMITTED");
+        
         // Performance optimizations
         config.addDataSourceProperty("cachePrepStmts", "true");
         config.addDataSourceProperty("prepStmtCacheSize", "250");
