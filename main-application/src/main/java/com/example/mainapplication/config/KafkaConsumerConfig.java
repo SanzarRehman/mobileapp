@@ -42,17 +42,17 @@ public class KafkaConsumerConfig {
         configProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         configProps.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         configProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-        configProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, JsonDeserializer.class);
         configProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         configProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        configProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 10);
-        
-        // Configure JSON deserializer to trust specific packages
-        configProps.put(JsonDeserializer.TRUSTED_PACKAGES, "com.example.mainapplication.event");
-        configProps.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
-        configProps.put(JsonDeserializer.VALUE_DEFAULT_TYPE, Object.class);
-        
-        return new DefaultKafkaConsumerFactory<>(configProps);
+        configProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 50);
+
+        // Configure JSON deserializer explicitly
+        JsonDeserializer<Object> valueDeserializer = new JsonDeserializer<>(Object.class);
+        valueDeserializer.addTrustedPackages("*");
+        valueDeserializer.setUseTypeHeaders(false); // ignore producer type headers
+        valueDeserializer.setRemoveTypeHeaders(false);
+
+        return new DefaultKafkaConsumerFactory<>(configProps, new StringDeserializer(), valueDeserializer);
     }
 
     /**
