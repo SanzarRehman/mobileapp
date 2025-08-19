@@ -81,7 +81,7 @@ public class UserCommandController {
      */
     @PutMapping("/{userId}")
     public CompletableFuture<ResponseEntity<CommandResponse>> updateUser(
-            @PathVariable String userId,
+            @PathVariable("userId") String userId,
             @Valid @RequestBody UpdateUserRequest request) {
         
         logger.info("Received update user request for user ID: {}", userId);

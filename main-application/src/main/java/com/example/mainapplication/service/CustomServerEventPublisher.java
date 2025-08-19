@@ -97,7 +97,8 @@ public class CustomServerEventPublisher {
             DomainEventMessage<?> domainEvent = (DomainEventMessage<?>) eventMessage;
             payload.put("aggregateId", domainEvent.getAggregateIdentifier());
             payload.put("aggregateType", domainEvent.getType());
-            payload.put("sequenceNumber", domainEvent.getSequenceNumber());
+            // Convert Axon's 0-based sequence numbers to 1-based for custom server
+            payload.put("sequenceNumber", domainEvent.getSequenceNumber() + 1);
         }
         
         return payload;

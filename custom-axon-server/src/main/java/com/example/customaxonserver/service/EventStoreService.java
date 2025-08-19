@@ -88,11 +88,11 @@ public class EventStoreService {
                 // Verify expected sequence number for optimistic locking
                 long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
                 long expected = expectedSequenceNumber;
-                boolean validFirstInsert = (currentSequenceNumber == 0 && expected == 0);
+                boolean validFirstInsert = (currentSequenceNumber == 0 && expected == 1);
                 boolean validNext = (expected == currentSequenceNumber + 1);
                 if (!(validFirstInsert || validNext)) {
                     throw new ConcurrencyException(
-                        String.format("Expected sequence number %d (or 0 on first insert) but current is %d for aggregate %s", 
+                        String.format("Expected sequence number %d (or 1 for first event) but current is %d for aggregate %s", 
                                     expectedSequenceNumber, currentSequenceNumber, aggregateId));
                 }
 
@@ -148,11 +148,11 @@ public class EventStoreService {
                 // Verify expected sequence number for optimistic locking
                 long currentSequenceNumber = getCurrentSequenceNumber(aggregateId);
                 long starting = startingSequenceNumber;
-                boolean validFirstInsert = (currentSequenceNumber == 0 && starting == 0);
+                boolean validFirstInsert = (currentSequenceNumber == 0 && starting == 1);
                 boolean validNext = (starting == currentSequenceNumber + 1);
                 if (!(validFirstInsert || validNext)) {
                     throw new ConcurrencyException(
-                        String.format("Expected starting sequence number %d (or 0 on first insert) but current is %d for aggregate %s", 
+                        String.format("Expected starting sequence number %d (or 1 for first event) but current is %d for aggregate %s", 
                                     startingSequenceNumber, currentSequenceNumber, aggregateId));
                 }
 
@@ -249,8 +249,7 @@ public class EventStoreService {
      */
     @Transactional(readOnly = true)
     public Long getNextSequenceNumber(String aggregateId) {
-        return 0L;
-        //return getCurrentSequenceNumber(aggregateId) + 1;
+        return getCurrentSequenceNumber(aggregateId) + 1;
     }
 
     /**

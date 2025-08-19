@@ -148,6 +148,9 @@ public class UserAggregate {
      */
     @EventSourcingHandler
     public void on(UserUpdatedEvent event) {
+
+        logger.info("🎯 UserAggregate: Handling Update for userId: {}", event.getUserId());
+
         this.username = event.getUsername();
         this.email = event.getEmail();
         this.fullName = event.getFullName();

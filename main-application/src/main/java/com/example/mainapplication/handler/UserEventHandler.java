@@ -38,7 +38,9 @@ public class UserEventHandler {
      */
     @EventHandler
     public void on(UserCreatedEvent event) {
-        logger.info("Processing UserCreatedEvent for user: {}", event.getUserId());
+        logger.info("🎉 EVENT HANDLER: Processing UserCreatedEvent for user: {}", event.getUserId());
+        logger.info("🎉 EVENT HANDLER: User details - username: {}, email: {}, fullName: {}", 
+                   event.getUsername(), event.getEmail(), event.getFullName());
         
         try {
             // Check if projection already exists to avoid duplicates
@@ -58,7 +60,7 @@ public class UserEventHandler {
 
             userProjectionRepository.save(projection);
             
-            logger.info("Successfully created user projection for user: {}", event.getUserId());
+            logger.info("🎉 EVENT HANDLER: Successfully processed UserCreatedEvent for user: {}", event.getUserId());
         } catch (Exception e) {
             logger.error("Error processing UserCreatedEvent for user: {}", event.getUserId(), e);
             throw e; // Re-throw to trigger retry mechanism
@@ -72,7 +74,9 @@ public class UserEventHandler {
      */
     @EventHandler
     public void on(UserUpdatedEvent event) {
-        logger.info("Processing UserUpdatedEvent for user: {}", event.getUserId());
+        logger.info("🔄 EVENT HANDLER: Processing UserUpdatedEvent for user: {}", event.getUserId());
+        logger.info("🔄 EVENT HANDLER: Updated details - username: {}, email: {}, fullName: {}", 
+                   event.getUsername(), event.getEmail(), event.getFullName());
         
         try {
             UserProjection projection = userProjectionRepository.findById(event.getUserId())
@@ -87,7 +91,7 @@ public class UserEventHandler {
 
             userProjectionRepository.save(projection);
             
-            logger.info("Successfully updated user projection for user: {}", event.getUserId());
+            logger.info("🔄 EVENT HANDLER: Successfully processed UserUpdatedEvent for user: {}", event.getUserId());
         } catch (Exception e) {
             logger.error("Error processing UserUpdatedEvent for user: {}", event.getUserId(), e);
             throw e; // Re-throw to trigger retry mechanism

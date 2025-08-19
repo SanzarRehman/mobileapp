@@ -38,7 +38,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/public/**").permitAll()
                 // Service-to-service endpoints (require service role)
                 .requestMatchers("/api/commands/**").permitAll()
-                .requestMatchers("/api/queries/**").hasAnyRole("SERVICE", "ADMIN")
+                .requestMatchers("/api/**").permitAll()
                 .requestMatchers("/api/events/**").permitAll()
                 .requestMatchers("/api/snapshots/**").permitAll()
                 // Admin endpoints

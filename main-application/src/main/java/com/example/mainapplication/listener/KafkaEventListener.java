@@ -30,10 +30,10 @@
 //
 //    @KafkaListener(topics = "axon-events", groupId = "axon-consumers")
 //    public void consume(ConsumerRecord<String, Object> record, Acknowledgment acknowledgment) {
-//        logger.info("🎧 Received Kafka message from topic: {}, partition: {}, offset: {}", 
+//        logger.info("🎧 Received Kafka message from topic: {}, partition: {}, offset: {}",
 //                   record.topic(), record.partition(), record.offset());
 //        logger.info("🎧 Raw message value: {}", record.value());
-//        
+//
 //        try {
 //            @SuppressWarnings("unchecked")
 //            Map<String, Object> message = (Map<String, Object>) record.value();
@@ -54,7 +54,7 @@
 //            logger.info("🎧 Created event object: {}", event);
 //
 //            GenericEventMessage<?> eventMessage = new GenericEventMessage<>(event, meta);
-//            
+//
 //            logger.info("🎧 About to publish to eventBus with fromKafka=true metadata");
 //            eventBus.publish(eventMessage);
 //            logger.info("🎧 Successfully published to eventBus");
@@ -63,3 +63,7 @@
 //            logger.info("🎧 Message acknowledged");
 //        } catch (Exception e) {
 //            logger.error("🎧 Failed to consume Kafka event: {}", record, e);
+//            throw new RuntimeException(e);
+//        }
+//    }
+//}
