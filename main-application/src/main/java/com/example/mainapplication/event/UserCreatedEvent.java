@@ -1,5 +1,8 @@
 package com.example.mainapplication.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.Objects;
 
@@ -14,14 +17,22 @@ public class UserCreatedEvent {
     private final String fullName;
     private final Instant createdAt;
 
-    public UserCreatedEvent(String userId, String username, String email, String fullName, Instant createdAt) {
+
+
+    @JsonCreator
+    public UserCreatedEvent(
+        @JsonProperty("userId") String userId,
+        @JsonProperty("username") String username,
+        @JsonProperty("email") String email,
+        @JsonProperty("fullName") String fullName,
+        @JsonProperty("createdAt") Instant createdAt
+    ) {
         this.userId = Objects.requireNonNull(userId, "User ID cannot be null");
         this.username = Objects.requireNonNull(username, "Username cannot be null");
         this.email = Objects.requireNonNull(email, "Email cannot be null");
         this.fullName = Objects.requireNonNull(fullName, "Full name cannot be null");
-        this.createdAt = Objects.requireNonNull(createdAt, "Created timestamp cannot be null");
+        this.createdAt = Objects.requireNonNull(createdAt, "Updated timestamp cannot be null");
     }
-
     public String getUserId() {
         return userId;
     }

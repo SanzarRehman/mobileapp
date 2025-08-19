@@ -15,11 +15,7 @@ public class EventProcessorConfig {
 
     @Autowired
     public void configure(EventProcessingConfigurer configurer) {
-        // Configure the UserManagementSagaProcessor specifically
-        configurer.registerTrackingEventProcessorConfiguration("UserManagementSagaProcessor",
-                c -> TrackingEventProcessorConfiguration.forParallelProcessing(1)
-                        .andBatchSize(1)
-                        .andInitialTrackingToken(StreamableMessageSource::createHeadToken));
+
         
         // Configure other event processors with improved settings
         configurer.registerTrackingEventProcessorConfiguration("com.example.mainapplication.handler",

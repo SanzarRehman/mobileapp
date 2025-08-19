@@ -38,6 +38,8 @@ public class UserAggregate {
     protected UserAggregate() {
     }
 
+
+
     /**
      * Command handler for creating a new user.
      * Validates business rules and publishes UserCreatedEvent.
@@ -136,7 +138,7 @@ public class UserAggregate {
         this.active = true;
         this.createdAt = event.getCreatedAt();
         this.updatedAt = event.getCreatedAt();
-        
+
         logger.info("🎯 UserAggregate: Successfully processed UserCreatedEvent for userId: {}", event.getUserId());
     }
 

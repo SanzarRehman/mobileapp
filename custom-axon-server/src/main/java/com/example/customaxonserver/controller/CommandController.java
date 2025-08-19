@@ -16,6 +16,9 @@ import org.springframework.http.HttpEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
 
 import jakarta.validation.Valid;
 import java.util.HashMap;
@@ -95,24 +98,23 @@ public class CommandController {
     private CommandResponse forwardCommandToInstance(String targetInstance, CommandMessage commandMessage) {
         try {
             // Parse instance ID to extract connection details
-            // Format: applicationName-hostname-port-timestamp
+            // Expected format: applicationName-hostname-port-timestamp
             String[] parts = targetInstance.split("-");
-            if (parts.length < 3) {
-                throw new RuntimeException("Invalid instance ID format: " + targetInstance);
+            if (parts.length < 4) {
+                throw new RuntimeException("Invalid instance ID format: " + targetInstance + ", expected applicationName-hostname-port-timestamp");
             }
-            
-            // Extract port and hostname from instance ID
-            String port = "8080"; // Third part is the port
-            String hostname = "localhost"; // Second part is hostname
-            
+
+            String hostname = "localhost"; // second part is hostname
+            String port = "8080";      // third part is port
+
             // For local development, default to localhost if hostname is complex
             if (hostname.contains(".") && hostname.endsWith(".local")) {
                 hostname = "localhost";
             }
-            
+
             // Construct the target URL
             String targetUrl = "http://" + hostname + ":" + port + "/api/internal/commands/process";
-            
+
             // Create the payload to send
             Map<String, Object> payload = new HashMap<>();
             payload.put("commandType", commandMessage.getCommandType());
@@ -120,62 +122,70 @@ public class CommandController {
             payload.put("aggregateId", commandMessage.getAggregateId());
             payload.put("payload", commandMessage.getPayload());
             payload.put("metadata", commandMessage.getMetadata());
-            
+
             // Set headers
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             headers.set("Connection", "close"); // Ensure connection is closed properly
-            
+
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
-            
+
             logger.debug("Forwarding command {} to instance at {}", commandMessage.getCommandId(), targetUrl);
-            
-            // Create RestTemplate with proper configuration
-            RestTemplate restTemplate = new RestTemplate();
-            
+
+            // RestTemplate with timeouts
+            SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+            factory.setConnectTimeout(3000);
+            factory.setReadTimeout(5000);
+            RestTemplate restTemplate = new RestTemplate(factory);
+
             try {
-                ResponseEntity<Map> response = restTemplate.postForEntity(targetUrl, request, Map.class);
-                
+                ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    targetUrl,
+                    HttpMethod.POST,
+                    request,
+                    new ParameterizedTypeReference<Map<String, Object>>() {}
+                );
+
                 if (response.getStatusCode().is2xxSuccessful()) {
                     if (response.getBody() != null) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> responseBody = (Map<String, Object>) response.getBody();
+                        Map<String, Object> responseBody = response.getBody();
                         String status = (String) responseBody.get("status");
-                        
+
                         if ("SUCCESS".equals(status)) {
-                            return CommandResponse.success(commandMessage.getCommandId(), targetInstance, 
+                            return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
                                     (String) responseBody.get("result"));
                         } else {
-                            return CommandResponse.error(commandMessage.getCommandId(), 
-                                    (String) responseBody.get("message"));
+                            return CommandResponse.error(commandMessage.getCommandId(),
+                                    (String) responseBody.getOrDefault("message", "Unknown error"));
                         }
                     } else {
                         // Success but no body - treat as success
-                        return CommandResponse.success(commandMessage.getCommandId(), targetInstance, 
+                        return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
                                 "Command processed successfully");
                     }
                 } else {
-                    return CommandResponse.error(commandMessage.getCommandId(), 
+                    return CommandResponse.error(commandMessage.getCommandId(),
                             "Failed to forward command: " + response.getStatusCode());
                 }
-                
+
             } catch (org.springframework.web.client.ResourceAccessException e) {
                 // Handle connection issues gracefully
-                if (e.getMessage().contains("Unexpected end of file")) {
-                    logger.warn("Connection closed unexpectedly for command {}, but command may have been processed", 
-                              commandMessage.getCommandId());
+                if (e.getMessage() != null && e.getMessage().contains("Unexpected end of file")) {
+                    logger.warn("Connection closed unexpectedly for command {}, but command may have been processed",
+                            commandMessage.getCommandId());
                     // Assume success since the server often processes the command even when connection drops
-                    return CommandResponse.success(commandMessage.getCommandId(), targetInstance, 
+                    return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
                             "Command processed (connection dropped)");
                 } else {
                     throw e; // Re-throw other connection issues
                 }
             }
-            
+
         } catch (Exception e) {
-            logger.error("Failed to forward command {} to instance {}: {}", 
-                        commandMessage.getCommandId(), targetInstance, e.getMessage(), e);
-            return CommandResponse.error(commandMessage.getCommandId(), 
+            logger.error("Failed to forward command {} to instance {}: {}",
+                    commandMessage.getCommandId(), targetInstance, e.getMessage(), e);
+            return CommandResponse.error(commandMessage.getCommandId(),
                     "Failed to forward command: " + e.getMessage());
         }
     }

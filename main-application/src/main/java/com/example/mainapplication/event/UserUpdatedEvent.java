@@ -1,5 +1,8 @@
 package com.example.mainapplication.event;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.Objects;
 
@@ -14,7 +17,14 @@ public class UserUpdatedEvent {
     private final String fullName;
     private final Instant updatedAt;
 
-    public UserUpdatedEvent(String userId, String username, String email, String fullName, Instant updatedAt) {
+    @JsonCreator
+    public UserUpdatedEvent(
+        @JsonProperty("userId") String userId,
+        @JsonProperty("username") String username,
+        @JsonProperty("email") String email,
+        @JsonProperty("fullName") String fullName,
+        @JsonProperty("updatedAt") Instant updatedAt
+    ) {
         this.userId = Objects.requireNonNull(userId, "User ID cannot be null");
         this.username = Objects.requireNonNull(username, "Username cannot be null");
         this.email = Objects.requireNonNull(email, "Email cannot be null");
@@ -41,6 +51,8 @@ public class UserUpdatedEvent {
     public Instant getUpdatedAt() {
         return updatedAt;
     }
+
+
 
     @Override
     public boolean equals(Object o) {

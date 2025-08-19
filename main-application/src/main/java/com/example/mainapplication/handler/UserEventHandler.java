@@ -4,6 +4,7 @@ import com.example.mainapplication.event.UserCreatedEvent;
 import com.example.mainapplication.event.UserUpdatedEvent;
 import com.example.mainapplication.projection.UserProjection;
 import com.example.mainapplication.repository.UserProjectionRepository;
+import org.axonframework.config.ProcessingGroup;
 import org.axonframework.eventhandling.EventHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +19,7 @@ import java.time.ZoneOffset;
  * This handler listens to events from Kafka and updates the read-side projections.
  */
 @Component
+@ProcessingGroup("my-subscribing-group")
 public class UserEventHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(UserEventHandler.class);

@@ -5,6 +5,7 @@ import com.example.mainapplication.query.FindAllUsersQuery;
 import com.example.mainapplication.query.FindUserByEmailQuery;
 import com.example.mainapplication.query.FindUserByIdQuery;
 import com.example.mainapplication.repository.UserProjectionRepository;
+import org.axonframework.config.ProcessingGroup;
 import org.axonframework.queryhandling.QueryHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +22,7 @@ import java.util.Optional;
  * This handler provides read-side query capabilities for user data.
  */
 @Component
+@ProcessingGroup("my-subscribing-group")
 public class UserQueryHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(UserQueryHandler.class);

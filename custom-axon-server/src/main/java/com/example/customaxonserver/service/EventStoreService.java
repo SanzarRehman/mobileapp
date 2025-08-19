@@ -249,8 +249,8 @@ public class EventStoreService {
      */
     @Transactional(readOnly = true)
     public Long getNextSequenceNumber(String aggregateId) {
-        //return 0L;
-        return getCurrentSequenceNumber(aggregateId) + 1;
+        return 0L;
+        //return getCurrentSequenceNumber(aggregateId) + 1;
     }
 
     /**
