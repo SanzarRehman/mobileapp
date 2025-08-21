@@ -40,12 +40,10 @@ public class AxonHandlerRegistry {
       Object bean = context.getBean(beanName);
       Class<?> targetClass = AopUtils.getTargetClass(bean);
 
-      // 1️⃣ Scan methods
       for (Method method : targetClass.getDeclaredMethods()) {
         scanExecutable(targetClass, method);
       }
 
-      // 2️⃣ Scan constructors
       for (Constructor<?> constructor : targetClass.getDeclaredConstructors()) {
         scanExecutable(targetClass, constructor);
       }
@@ -53,23 +51,20 @@ public class AxonHandlerRegistry {
 
     // Debug prints
     eventHandlers.forEach((event, methods) -> {
-      System.out.println("📌 EventHandler for " + event.getName());
+
       methods.forEach(h -> System.out.println("   -> " + h));
     });
 
     commandHandlers.forEach((cmd, methods) -> {
-      System.out.println("📌 CommandHandler for " + cmd.getName());
+
       methods.forEach(h -> System.out.println("   -> " + h));
     });
 
     queryHandlers.forEach((qry, methods) -> {
-      System.out.println("📌 QueryHandler for " + qry.getName());
+
       methods.forEach(h -> System.out.println("   -> " + h));
     });
 
-    System.out.println("📌 Event Handler Classes: " + eventHandlerClasses);
-    System.out.println("📌 Command Handler Classes: " + commandHandlerClasses);
-    System.out.println("📌 Query Handler Classes: " + queryHandlerClasses);
   }
 
   private void scanExecutable(Class<?> targetClass, Executable executable) {

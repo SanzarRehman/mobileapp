@@ -5,6 +5,7 @@ import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -23,8 +24,13 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * gRPC-based service for registering command handlers with the custom axon server
- * and maintaining health status through auto-discovery.
+ * Unified gRPC-based service for:
+ * 1. Registering command handlers with the custom axon server
+ * 2. Maintaining health status through heartbeats
+ * 3. Monitoring other instances via health streaming
+ * 4. Auto-discovery and service management
+ * 
+ * This service consolidates all gRPC command handler registration and health management.
  */
 @Service
 @EnableScheduling
@@ -44,11 +50,12 @@ public class GrpcCommandHandlerRegistrationService {
     @Value("${server.port:8080}")
     private int serverPort;
 
-    @Value("${grpc.client.custom-axon-server.address:static://localhost:9096}")
+    @Value("${grpc.client.custom-axon-server.address:static://localhost:9060}")
     private String customServerAddress;
 
     private final String instanceId;
     private final String serviceHost;
+    private final StreamingHeartbeatClient streamingHeartbeatClient;
     
     // Command types that this instance can handle - auto-discovered
     private final List<String> supportedCommandTypes = Arrays.asList(
@@ -58,9 +65,11 @@ public class GrpcCommandHandlerRegistrationService {
 
     private volatile boolean registered = false;
 
-    public GrpcCommandHandlerRegistrationService() {
+    @Autowired
+    public GrpcCommandHandlerRegistrationService(StreamingHeartbeatClient streamingHeartbeatClient) {
         this.instanceId = generateInstanceId();
         this.serviceHost = getLocalHostAddress();
+        this.streamingHeartbeatClient = streamingHeartbeatClient;
     }
 
     /**
@@ -76,6 +85,12 @@ public class GrpcCommandHandlerRegistrationService {
                 // Wait a bit for the custom server to be ready
                 Thread.sleep(5000);
                 autoRegisterCommandHandlers();
+                
+                // Log streaming heartbeat status
+                logger.info("Command handlers registered. Streaming heartbeats active: {}, Regular heartbeats active: {}", 
+                           streamingHeartbeatClient.isHealthStreamActive(), 
+                           streamingHeartbeatClient.isHeartbeatActive());
+                
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warn("Registration interrupted during startup delay");
@@ -134,6 +149,7 @@ public class GrpcCommandHandlerRegistrationService {
 
     /**
      * Send periodic heartbeat to maintain healthy status.
+     * This works in coordination with StreamingHeartbeatClient.
      * Runs every 30 seconds.
      */
     @Scheduled(fixedRate = 30000)
@@ -144,10 +160,17 @@ public class GrpcCommandHandlerRegistrationService {
         }
 
         try {
+            // Check if streaming heartbeat is working
+            if (!streamingHeartbeatClient.isHeartbeatActive()) {
+                logger.warn("Streaming heartbeat is not active! Attempting reconnection...");
+                streamingHeartbeatClient.reconnectHealthStream();
+            }
+
             Map<String, String> metadata = new HashMap<>();
             metadata.put("last_heartbeat", Instant.now().toString());
             metadata.put("memory_usage", getMemoryUsage());
             metadata.put("active_threads", String.valueOf(Thread.activeCount()));
+            metadata.put("streaming_active", String.valueOf(streamingHeartbeatClient.isHealthStreamActive()));
 
             HeartbeatRequest request = HeartbeatRequest.newBuilder()
                     .setInstanceId(instanceId)
@@ -179,11 +202,18 @@ public class GrpcCommandHandlerRegistrationService {
 
     /**
      * Health check to ensure custom server is available and re-register if needed.
+     * Also monitors streaming heartbeat status.
      * Runs every 60 seconds.
      */
     @Scheduled(fixedRate = 60000)
     public void healthCheck() {
         try {
+            // Check streaming heartbeat status
+            if (!streamingHeartbeatClient.isHealthStreamActive()) {
+                logger.warn("Health stream connection lost. Attempting to reconnect...");
+                streamingHeartbeatClient.reconnectHealthStream();
+            }
+
             // Discover available command handlers to test connectivity
             DiscoverCommandHandlersRequest request = DiscoverCommandHandlersRequest.newBuilder()
                     .setCommandType(supportedCommandTypes.get(0))
@@ -238,6 +268,7 @@ public class GrpcCommandHandlerRegistrationService {
 
     /**
      * Unregister command handlers when the application shuts down.
+     * StreamingHeartbeatClient will automatically handle its own cleanup.
      */
     @PreDestroy
     public void onShutdown() {
@@ -248,6 +279,9 @@ public class GrpcCommandHandlerRegistrationService {
         logger.info("Application shutting down, unregistering command handlers...");
         
         try {
+            // Force a final heartbeat with STOPPING status via StreamingHeartbeatClient
+            streamingHeartbeatClient.forceHeartbeat(HealthStatus.STOPPING);
+            
             UnregisterCommandHandlerRequest request = UnregisterCommandHandlerRequest.newBuilder()
                     .setInstanceId(instanceId)
                     .addAllCommandTypes(supportedCommandTypes)
@@ -264,6 +298,8 @@ public class GrpcCommandHandlerRegistrationService {
         } catch (Exception e) {
             logger.error("Error during shutdown unregistration: {}", e.getMessage());
         }
+        
+        logger.info("gRPC command handler registration service shutdown completed");
     }
 
     /**
@@ -319,6 +355,34 @@ public class GrpcCommandHandlerRegistrationService {
         long freeMemory = runtime.freeMemory();
         long usedMemory = totalMemory - freeMemory;
         return String.format("%.2f%%", (double) usedMemory / totalMemory * 100);
+    }
+
+    /**
+     * Check if streaming heartbeats are active.
+     */
+    public boolean isStreamingHeartbeatActive() {
+        return streamingHeartbeatClient.isHealthStreamActive();
+    }
+
+    /**
+     * Check if regular heartbeats are active.
+     */
+    public boolean isHeartbeatActive() {
+        return streamingHeartbeatClient.isHeartbeatActive();
+    }
+
+    /**
+     * Get the streaming heartbeat client instance ID.
+     */
+    public String getStreamingInstanceId() {
+        return streamingHeartbeatClient.getInstanceId();
+    }
+
+    /**
+     * Manually trigger heartbeat stream reconnection.
+     */
+    public void forceHeartbeatReconnect() {
+        streamingHeartbeatClient.reconnectHealthStream();
     }
 
     /**
