@@ -197,24 +197,24 @@ public class CommandController {
      * @param commandType The command type
      * @return Success response
      */
-    @PostMapping("/handlers/{instanceId}/{commandType}")
-    public ResponseEntity<String> registerHandler(
-            @PathVariable String instanceId,
-            @PathVariable String commandType) {
-        
-        logger.info("Registering command handler for {} on instance {}", commandType, instanceId);
-        
-        try {
-            commandRoutingService.registerCommandHandler(instanceId, commandType);
-            return ResponseEntity.ok("Handler registered successfully");
-            
-        } catch (Exception e) {
-            logger.error("Failed to register handler for {} on instance {}: {}", 
-                        commandType, instanceId, e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Failed to register handler: " + e.getMessage());
-        }
-    }
+//    @PostMapping("/handlers/{instanceId}/{commandType}")
+//    public ResponseEntity<String> registerHandler(
+//            @PathVariable String instanceId,
+//            @PathVariable String commandType) {
+//
+//        logger.info("Registering command handler for {} on instance {}", commandType, instanceId);
+//
+//        try {
+//            commandRoutingService.registerCommandHandler(instanceId, commandType);
+//            return ResponseEntity.ok("Handler registered successfully");
+//
+//        } catch (Exception e) {
+//            logger.error("Failed to register handler for {} on instance {}: {}",
+//                        commandType, instanceId, e.getMessage(), e);
+//            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+//                    .body("Failed to register handler: " + e.getMessage());
+//        }
+//    }
     
     /**
      * Unregisters a command handler for a specific command type on an instance.

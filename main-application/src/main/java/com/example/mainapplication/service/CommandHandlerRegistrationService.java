@@ -1,6 +1,7 @@
 package com.example.mainapplication.service;
 
 import com.example.grpc.common.*;
+import com.example.mainapplication.AxonHandlerRegistry;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import org.slf4j.Logger;
@@ -42,6 +43,8 @@ public class CommandHandlerRegistrationService {
     private final String customServerUrl;
     private final String instanceId;
     private final StreamingHeartbeatClient streamingHeartbeatClient;
+
+    private final AxonHandlerRegistry axonHandlerRegistry;
     
     // gRPC components for command handler registration
     private final String grpcHost;
@@ -57,20 +60,21 @@ public class CommandHandlerRegistrationService {
 
     @Autowired
     public CommandHandlerRegistrationService(
-            @Qualifier("restTemplate") RestTemplate restTemplate,
-            @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl,
-            @Value("${spring.application.name:main-application}") String applicationName,
-            @Value("${app.custom-server.grpc.host:localhost}") String grpcHost,
-            @Value("${app.custom-server.grpc.port:9060}") int grpcPort,
-            StreamingHeartbeatClient streamingHeartbeatClient) {
+        @Qualifier("restTemplate") RestTemplate restTemplate,
+        @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl,
+        @Value("${spring.application.name:main-application}") String applicationName,
+        @Value("${app.custom-server.grpc.host:localhost}") String grpcHost,
+        @Value("${app.custom-server.grpc.port:9060}") int grpcPort,
+        StreamingHeartbeatClient streamingHeartbeatClient, AxonHandlerRegistry axonHandlerRegistry) {
         this.restTemplate = restTemplate;
         this.customServerUrl = customServerUrl;
         this.instanceId = generateInstanceId(applicationName);
         this.streamingHeartbeatClient = streamingHeartbeatClient;
         this.grpcHost = grpcHost;
         this.grpcPort = grpcPort;
-        
-        initializeGrpcChannel();
+      this.axonHandlerRegistry = axonHandlerRegistry;
+
+      initializeGrpcChannel();
     }
     
     /**
@@ -129,6 +133,11 @@ public class CommandHandlerRegistrationService {
      * Register all supported command handlers with the custom server.
      */
     private void registerAllCommandHandlers() {
+
+        axonHandlerRegistry.getCommandHandlerClasses();
+        axonHandlerRegistry.getEventHandlerClasses();
+        axonHandlerRegistry.getCommandHandlers();
+
         logger.info("Registering {} command handlers for instance {}", 
                    supportedCommandTypes.size(), instanceId);
 
