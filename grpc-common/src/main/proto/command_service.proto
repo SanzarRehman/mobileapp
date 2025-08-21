@@ -6,22 +6,29 @@ option java_outer_classname = "CommandServiceProto";
 
 package commandservice;
 
-// Command Handling Service
+// Enhanced Service for handling all Axon handler types
 service CommandHandlingService {
-  // Register a command handler
-  rpc RegisterCommandHandler(RegisterCommandHandlerRequest) returns (RegisterCommandHandlerResponse);
+  // Register multiple handler types in one call
+  rpc RegisterHandlers(RegisterHandlersRequest) returns (RegisterHandlersResponse);
   
-  // Unregister a command handler
+  // Unregister multiple handler types in one call  
+  rpc UnregisterHandlers(UnregisterHandlersRequest) returns (UnregisterHandlersResponse);
+  
+  // Legacy command-only registration (for backward compatibility)
+  rpc RegisterCommandHandler(RegisterCommandHandlerRequest) returns (RegisterCommandHandlerResponse);
   rpc UnregisterCommandHandler(UnregisterCommandHandlerRequest) returns (UnregisterCommandHandlerResponse);
   
-  // Submit a command for processing
+  // Submit operations
   rpc SubmitCommand(SubmitCommandRequest) returns (SubmitCommandResponse);
+  rpc SubmitQuery(SubmitQueryRequest) returns (SubmitQueryResponse);
   
   // Health check and heartbeat
   rpc SendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   
-  // Auto-discovery: Get available command handlers
+  // Discovery operations for all handler types
   rpc DiscoverCommandHandlers(DiscoverCommandHandlersRequest) returns (DiscoverCommandHandlersResponse);
+  rpc DiscoverQueryHandlers(DiscoverQueryHandlersRequest) returns (DiscoverQueryHandlersResponse);
+  rpc DiscoverEventHandlers(DiscoverEventHandlersRequest) returns (DiscoverEventHandlersResponse);
   
   // Stream for real-time health updates
   rpc HealthStream(HealthStreamRequest) returns (stream HealthStreamResponse);
@@ -42,7 +49,91 @@ service ServiceDiscoveryService {
   rpc WatchServices(WatchServicesRequest) returns (stream ServiceChangeNotification);
 }
 
-// Messages for Command Handling
+// Enhanced Messages for All Handler Types
+message RegisterHandlersRequest {
+  string instance_id = 1;
+  string service_name = 2;
+  string host = 3;
+  int32 port = 4;
+  repeated string command_types = 5;
+  repeated string query_types = 6;
+  repeated string event_types = 7;
+  map<string, string> metadata = 8;
+}
+
+message RegisterHandlersResponse {
+  bool success = 1;
+  string message = 2;
+  string registration_id = 3;
+  HandlerRegistrationSummary summary = 4;
+}
+
+message UnregisterHandlersRequest {
+  string instance_id = 1;
+  repeated string command_types = 2;
+  repeated string query_types = 3;
+  repeated string event_types = 4;
+}
+
+message UnregisterHandlersResponse {
+  bool success = 1;
+  string message = 2;
+  HandlerRegistrationSummary summary = 3;
+}
+
+message HandlerRegistrationSummary {
+  int32 commands_registered = 1;
+  int32 queries_registered = 2;
+  int32 events_registered = 3;
+  int32 commands_unregistered = 4;
+  int32 queries_unregistered = 5;
+  int32 events_unregistered = 6;
+}
+
+// Query handling messages
+message SubmitQueryRequest {
+  string query_id = 1;
+  string query_type = 2;
+  bytes payload = 3;
+  map<string, string> metadata = 4;
+  int64 timestamp = 5;
+  int32 timeout_ms = 6;
+}
+
+message SubmitQueryResponse {
+  bool success = 1;
+  string message = 2;
+  bytes result = 3;
+  string target_instance = 4;
+  string error_code = 5;
+  int64 execution_time_ms = 6;
+}
+
+// Discovery messages for queries
+message DiscoverQueryHandlersRequest {
+  string query_type = 1;
+  bool only_healthy = 2;
+}
+
+message DiscoverQueryHandlersResponse {
+  repeated ServiceInstance instances = 1;
+  int32 total_count = 2;
+  int32 healthy_count = 3;
+}
+
+// Discovery messages for events
+message DiscoverEventHandlersRequest {
+  string event_type = 1;
+  bool only_healthy = 2;
+}
+
+message DiscoverEventHandlersResponse {
+  repeated ServiceInstance instances = 1;
+  int32 total_count = 2;
+  int32 healthy_count = 3;
+}
+
+// Legacy Messages for Command Handling (backward compatibility)
 message RegisterCommandHandlerRequest {
   string instance_id = 1;
   string service_name = 2;
@@ -160,7 +251,7 @@ message ServiceChangeNotification {
   int64 timestamp = 3;
 }
 
-// Common Data Types
+// Enhanced ServiceInstance with all handler types
 message ServiceInstance {
   string instance_id = 1;
   string service_name = 2;
@@ -168,10 +259,12 @@ message ServiceInstance {
   int32 port = 4;
   HealthStatus status = 5;
   repeated string command_types = 6;
-  map<string, string> metadata = 7;
-  int64 last_heartbeat = 8;
-  string version = 9;
-  repeated string tags = 10;
+  repeated string query_types = 7;
+  repeated string event_types = 8;
+  map<string, string> metadata = 9;
+  int64 last_heartbeat = 10;
+  string version = 11;
+  repeated string tags = 12;
 }
 
 enum HealthStatus {

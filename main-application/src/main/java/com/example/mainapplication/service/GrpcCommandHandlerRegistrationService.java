@@ -1,6 +1,7 @@
 package com.example.mainapplication.service;
 
 import com.example.grpc.common.*;
+import com.example.mainapplication.AxonHandlerRegistry;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.slf4j.Logger;
@@ -17,20 +18,21 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PreDestroy;
 import java.net.InetAddress;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * Unified gRPC-based service for:
- * 1. Registering command handlers with the custom axon server
+ * 1. Auto-discovering and registering ALL handler types (commands, queries, events) from AxonHandlerRegistry
  * 2. Maintaining health status through heartbeats
  * 3. Monitoring other instances via health streaming
  * 4. Auto-discovery and service management
  * 
- * This service consolidates all gRPC command handler registration and health management.
+ * This service consolidates all gRPC handler registration and health management.
+ * Uses clean Redis architecture for efficient routing.
  */
 @Service
 @EnableScheduling
@@ -56,46 +58,54 @@ public class GrpcCommandHandlerRegistrationService {
     private final String instanceId;
     private final String serviceHost;
     private final StreamingHeartbeatClient streamingHeartbeatClient;
+    private final AxonHandlerRegistry axonHandlerRegistry;
     
-    // Command types that this instance can handle - auto-discovered
-    private final List<String> supportedCommandTypes = Arrays.asList(
-        "com.example.mainapplication.command.CreateUserCommand",
-        "com.example.mainapplication.command.UpdateUserCommand"
-    );
+    // Auto-discovered handler types from AxonHandlerRegistry
+    private List<String> commandTypes;
+    private List<String> queryTypes;
+    private List<String> eventTypes;
 
     private volatile boolean registered = false;
 
     @Autowired
-    public GrpcCommandHandlerRegistrationService(StreamingHeartbeatClient streamingHeartbeatClient) {
+    public GrpcCommandHandlerRegistrationService(StreamingHeartbeatClient streamingHeartbeatClient,
+                                               AxonHandlerRegistry axonHandlerRegistry) {
         this.instanceId = generateInstanceId();
         this.serviceHost = getLocalHostAddress();
         this.streamingHeartbeatClient = streamingHeartbeatClient;
+        this.axonHandlerRegistry = axonHandlerRegistry;
     }
 
     /**
-     * Auto-register command handlers when the application is ready.
+     * Auto-register ALL handler types when the application is ready.
+     * This method waits for AxonHandlerRegistry to complete its inspection.
      */
     @EventListener(ApplicationReadyEvent.class)
     @Async
     public void onApplicationReady() {
-        logger.info("Application ready, auto-registering command handlers with custom server via gRPC...");
+        logger.info("Application ready, auto-discovering and registering ALL handlers with custom server via gRPC...");
         
         CompletableFuture.runAsync(() -> {
             try {
-                // Wait a bit for the custom server to be ready
-                Thread.sleep(5000);
-                autoRegisterCommandHandlers();
+                // Wait a bit for the custom server to be ready and AxonHandlerRegistry to complete
+                Thread.sleep(6000);
+                
+                // Auto-discover handler types from AxonHandlerRegistry
+                autoDiscoverHandlerTypes();
+                
+                // Register all discovered handlers
+                autoRegisterAllHandlers();
                 
                 // Log streaming heartbeat status
-                logger.info("Command handlers registered. Streaming heartbeats active: {}, Regular heartbeats active: {}", 
-                           streamingHeartbeatClient.isHealthStreamActive(), 
-                           streamingHeartbeatClient.isHeartbeatActive());
+                logger.info("All handlers registered successfully! Commands: {}, Queries: {}, Events: {}. Streaming heartbeats active: {}", 
+                           commandTypes.size(), queryTypes.size(), eventTypes.size(),
+                           streamingHeartbeatClient.isHealthStreamActive());
                 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warn("Registration interrupted during startup delay");
             } catch (Exception e) {
-                logger.error("Failed to auto-register command handlers on startup: {}", e.getMessage(), e);
+                logger.error("Failed to auto-register handlers on startup: {}", e.getMessage(), e);
                 // Schedule retry
                 scheduleRetryRegistration();
             }
@@ -103,11 +113,44 @@ public class GrpcCommandHandlerRegistrationService {
     }
 
     /**
-     * Auto-discover and register all command handlers for this service instance.
+     * Auto-discover all handler types from AxonHandlerRegistry.
      */
-    private void autoRegisterCommandHandlers() {
-        logger.info("Auto-registering {} command handlers for instance {}", 
-                   supportedCommandTypes.size(), instanceId);
+    private void autoDiscoverHandlerTypes() {
+        logger.info("Auto-discovering handler types from AxonHandlerRegistry...");
+        
+        // Extract command types
+        commandTypes = axonHandlerRegistry.getCommandHandlers().keySet().stream()
+                .map(Class::getName)
+                .collect(Collectors.toList());
+        
+        // Extract query types  
+        queryTypes = axonHandlerRegistry.getQueryHandlers().keySet().stream()
+                .map(Class::getName)
+                .collect(Collectors.toList());
+        
+        // Extract event types
+        eventTypes = axonHandlerRegistry.getEventHandlers().keySet().stream()
+                .map(Class::getName)
+                .collect(Collectors.toList());
+                
+        logger.info("Auto-discovered handlers - Commands: {}, Queries: {}, Events: {}", 
+                   commandTypes.size(), queryTypes.size(), eventTypes.size());
+        
+        if (logger.isDebugEnabled()) {
+            logger.debug("Command types: {}", commandTypes);
+            logger.debug("Query types: {}", queryTypes);
+            logger.debug("Event types: {}", eventTypes);
+        }
+    }
+
+    /**
+     * Auto-discover and register ALL handler types for this service instance.
+     * Uses the new unified RegisterHandlers gRPC method.
+     */
+    private void autoRegisterAllHandlers() {
+        int totalHandlers = commandTypes.size() + queryTypes.size() + eventTypes.size();
+        logger.info("Auto-registering {} total handlers for instance {} (Commands: {}, Queries: {}, Events: {})", 
+                   totalHandlers, instanceId, commandTypes.size(), queryTypes.size(), eventTypes.size());
 
         try {
             // Create metadata for the service instance
@@ -116,33 +159,42 @@ public class GrpcCommandHandlerRegistrationService {
             metadata.put("application.version", "1.0.0");
             metadata.put("startup.time", Instant.now().toString());
             metadata.put("registration.type", "auto-discovery");
+            metadata.put("axon.handler.registry", "enabled");
+            metadata.put("total.handlers", String.valueOf(totalHandlers));
 
-            // Register command handlers via gRPC
-            RegisterCommandHandlerRequest request = RegisterCommandHandlerRequest.newBuilder()
+            // Use the new unified RegisterHandlers method
+            RegisterHandlersRequest request = RegisterHandlersRequest.newBuilder()
                     .setInstanceId(instanceId)
                     .setServiceName(applicationName)
                     .setHost(serviceHost)
                     .setPort(serverPort)
-                    .addAllCommandTypes(supportedCommandTypes)
+                    .addAllCommandTypes(commandTypes)
+                    .addAllQueryTypes(queryTypes)
+                    .addAllEventTypes(eventTypes)
                     .putAllMetadata(metadata)
                     .build();
 
-            RegisterCommandHandlerResponse response = commandHandlingStub.registerCommandHandler(request);
+            RegisterHandlersResponse response = commandHandlingStub.registerHandlers(request);
 
             if (response.getSuccess()) {
                 registered = true;
-                logger.info("Successfully auto-registered all command handlers for instance {}", instanceId);
+                HandlerRegistrationSummary summary = response.getSummary();
+                logger.info("Successfully auto-registered ALL handlers for instance {}", instanceId);
+                logger.info("Registration summary - Commands: {}, Queries: {}, Events: {}", 
+                           summary.getCommandsRegistered(), 
+                           summary.getQueriesRegistered(), 
+                           summary.getEventsRegistered());
                 logger.debug("Registration response: {}", response.getMessage());
             } else {
-                logger.error("Failed to register command handlers: {}", response.getMessage());
+                logger.error("Failed to register handlers: {}", response.getMessage());
                 throw new RuntimeException("Registration failed: " + response.getMessage());
             }
 
         } catch (StatusRuntimeException e) {
-            logger.error("gRPC error during command handler registration: {}", e.getStatus(), e);
+            logger.error("gRPC error during handler registration: {}", e.getStatus(), e);
             throw new RuntimeException("gRPC registration failed", e);
         } catch (Exception e) {
-            logger.error("Unexpected error during command handler registration: {}", e.getMessage(), e);
+            logger.error("Unexpected error during handler registration: {}", e.getMessage(), e);
             throw e;
         }
     }
@@ -171,6 +223,7 @@ public class GrpcCommandHandlerRegistrationService {
             metadata.put("memory_usage", getMemoryUsage());
             metadata.put("active_threads", String.valueOf(Thread.activeCount()));
             metadata.put("streaming_active", String.valueOf(streamingHeartbeatClient.isHealthStreamActive()));
+            metadata.put("total_handlers", String.valueOf(commandTypes.size() + queryTypes.size() + eventTypes.size()));
 
             HeartbeatRequest request = HeartbeatRequest.newBuilder()
                     .setInstanceId(instanceId)
@@ -214,25 +267,27 @@ public class GrpcCommandHandlerRegistrationService {
                 streamingHeartbeatClient.reconnectHealthStream();
             }
 
-            // Discover available command handlers to test connectivity
-            DiscoverCommandHandlersRequest request = DiscoverCommandHandlersRequest.newBuilder()
-                    .setCommandType(supportedCommandTypes.get(0))
-                    .setOnlyHealthy(true)
-                    .build();
+            // Test connectivity by discovering handlers for our own command types
+            if (!commandTypes.isEmpty()) {
+                DiscoverCommandHandlersRequest request = DiscoverCommandHandlersRequest.newBuilder()
+                        .setCommandType(commandTypes.get(0))
+                        .setOnlyHealthy(true)
+                        .build();
 
-            DiscoverCommandHandlersResponse response = commandHandlingStub.discoverCommandHandlers(request);
-            
-            logger.trace("Custom server health check passed - found {} healthy instances", 
-                        response.getHealthyCount());
+                DiscoverCommandHandlersResponse response = commandHandlingStub.discoverCommandHandlers(request);
+                
+                logger.trace("Custom server health check passed - found {} healthy instances", 
+                            response.getHealthyCount());
 
-            // If we're not in the discovered instances, re-register
-            boolean foundSelf = response.getInstancesList().stream()
-                    .anyMatch(instance -> instanceId.equals(instance.getInstanceId()));
+                // If we're not in the discovered instances, re-register
+                boolean foundSelf = response.getInstancesList().stream()
+                        .anyMatch(instance -> instanceId.equals(instance.getInstanceId()));
 
-            if (!foundSelf && registered) {
-                logger.warn("Instance {} not found in discovered handlers, attempting re-registration", instanceId);
-                registered = false;
-                scheduleRetryRegistration();
+                if (!foundSelf && registered) {
+                    logger.warn("Instance {} not found in discovered handlers, attempting re-registration", instanceId);
+                    registered = false;
+                    scheduleRetryRegistration();
+                }
             }
 
         } catch (StatusRuntimeException e) {
@@ -247,7 +302,7 @@ public class GrpcCommandHandlerRegistrationService {
     }
 
     /**
-     * Schedule a retry of command handler registration.
+     * Schedule a retry of handler registration.
      */
     private void scheduleRetryRegistration() {
         if (registered) {
@@ -257,7 +312,7 @@ public class GrpcCommandHandlerRegistrationService {
         CompletableFuture.runAsync(() -> {
             try {
                 Thread.sleep(10000); // Wait 10 seconds before retry
-                autoRegisterCommandHandlers();
+                autoRegisterAllHandlers();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception e) {
@@ -267,7 +322,7 @@ public class GrpcCommandHandlerRegistrationService {
     }
 
     /**
-     * Unregister command handlers when the application shuts down.
+     * Unregister ALL handlers when the application shuts down.
      * StreamingHeartbeatClient will automatically handle its own cleanup.
      */
     @PreDestroy
@@ -276,49 +331,112 @@ public class GrpcCommandHandlerRegistrationService {
             return;
         }
 
-        logger.info("Application shutting down, unregistering command handlers...");
+        logger.info("Application shutting down, unregistering ALL handlers...");
         
         try {
             // Force a final heartbeat with STOPPING status via StreamingHeartbeatClient
             streamingHeartbeatClient.forceHeartbeat(HealthStatus.STOPPING);
             
-            UnregisterCommandHandlerRequest request = UnregisterCommandHandlerRequest.newBuilder()
+            // Use the new unified UnregisterHandlers method
+            UnregisterHandlersRequest request = UnregisterHandlersRequest.newBuilder()
                     .setInstanceId(instanceId)
-                    .addAllCommandTypes(supportedCommandTypes)
+                    .addAllCommandTypes(commandTypes)
+                    .addAllQueryTypes(queryTypes)
+                    .addAllEventTypes(eventTypes)
                     .build();
 
-            UnregisterCommandHandlerResponse response = commandHandlingStub.unregisterCommandHandler(request);
+            UnregisterHandlersResponse response = commandHandlingStub.unregisterHandlers(request);
 
             if (response.getSuccess()) {
-                logger.info("Successfully unregistered command handlers for instance {}", instanceId);
+                HandlerRegistrationSummary summary = response.getSummary();
+                logger.info("Successfully unregistered ALL handlers for instance {}", instanceId);
+                logger.info("Unregistration summary - Commands: {}, Queries: {}, Events: {}", 
+                           summary.getCommandsUnregistered(), 
+                           summary.getQueriesUnregistered(), 
+                           summary.getEventsUnregistered());
             } else {
-                logger.warn("Failed to unregister command handlers: {}", response.getMessage());
+                logger.warn("Failed to unregister handlers: {}", response.getMessage());
             }
 
         } catch (Exception e) {
             logger.error("Error during shutdown unregistration: {}", e.getMessage());
         }
         
-        logger.info("gRPC command handler registration service shutdown completed");
+        logger.info("gRPC unified handler registration service shutdown completed");
     }
 
     /**
-     * Get discovered command handlers for a specific command type.
+     * Get discovered handlers for ALL types.
      */
-    public List<ServiceInstance> discoverCommandHandlers(String commandType) {
+    public Map<String, Object> discoverAllHandlers() {
+        Map<String, Object> allHandlers = new HashMap<>();
+        
         try {
-            DiscoverCommandHandlersRequest request = DiscoverCommandHandlersRequest.newBuilder()
-                    .setCommandType(commandType)
-                    .setOnlyHealthy(true)
-                    .build();
+            // Discover command handlers
+            if (!commandTypes.isEmpty()) {
+                List<ServiceInstance> commandHandlers = commandTypes.stream()
+                        .flatMap(commandType -> {
+                            try {
+                                DiscoverCommandHandlersRequest request = DiscoverCommandHandlersRequest.newBuilder()
+                                        .setCommandType(commandType)
+                                        .setOnlyHealthy(true)
+                                        .build();
+                                return commandHandlingStub.discoverCommandHandlers(request).getInstancesList().stream();
+                            } catch (Exception e) {
+                                logger.error("Failed to discover handlers for command type: {}", commandType, e);
+                                return java.util.stream.Stream.empty();
+                            }
+                        })
+                        .distinct()
+                        .collect(Collectors.toList());
+                allHandlers.put("commands", commandHandlers);
+            }
 
-            DiscoverCommandHandlersResponse response = commandHandlingStub.discoverCommandHandlers(request);
-            return response.getInstancesList();
+            // Discover query handlers
+            if (!queryTypes.isEmpty()) {
+                List<ServiceInstance> queryHandlers = queryTypes.stream()
+                        .flatMap(queryType -> {
+                            try {
+                                DiscoverQueryHandlersRequest request = DiscoverQueryHandlersRequest.newBuilder()
+                                        .setQueryType(queryType)
+                                        .setOnlyHealthy(true)
+                                        .build();
+                                return commandHandlingStub.discoverQueryHandlers(request).getInstancesList().stream();
+                            } catch (Exception e) {
+                                logger.error("Failed to discover handlers for query type: {}", queryType, e);
+                                return java.util.stream.Stream.empty();
+                            }
+                        })
+                        .distinct()
+                        .collect(Collectors.toList());
+                allHandlers.put("queries", queryHandlers);
+            }
+
+            // Discover event handlers
+            if (!eventTypes.isEmpty()) {
+                List<ServiceInstance> eventHandlers = eventTypes.stream()
+                        .flatMap(eventType -> {
+                            try {
+                                DiscoverEventHandlersRequest request = DiscoverEventHandlersRequest.newBuilder()
+                                        .setEventType(eventType)
+                                        .setOnlyHealthy(true)
+                                        .build();
+                                return commandHandlingStub.discoverEventHandlers(request).getInstancesList().stream();
+                            } catch (Exception e) {
+                                logger.error("Failed to discover handlers for event type: {}", eventType, e);
+                                return java.util.stream.Stream.empty();
+                            }
+                        })
+                        .distinct()
+                        .collect(Collectors.toList());
+                allHandlers.put("events", eventHandlers);
+            }
 
         } catch (Exception e) {
-            logger.error("Failed to discover command handlers for type: {}", commandType, e);
-            return Arrays.asList();
+            logger.error("Failed to discover all handlers: {}", e.getMessage(), e);
         }
+        
+        return allHandlers;
     }
 
     /**
@@ -390,7 +508,7 @@ public class GrpcCommandHandlerRegistrationService {
      */
     public void forceRegistration() {
         registered = false;
-        autoRegisterCommandHandlers();
+        autoRegisterAllHandlers();
     }
 
     /**
@@ -404,7 +522,7 @@ public class GrpcCommandHandlerRegistrationService {
      * Get the list of supported command types.
      */
     public List<String> getSupportedCommandTypes() {
-        return supportedCommandTypes;
+        return commandTypes;
     }
 
     /**

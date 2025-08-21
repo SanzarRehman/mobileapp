@@ -96,6 +96,25 @@ public class AxonHandlerRegistry {
   public Set<Class<?>> getCommandHandlerClasses() { return Collections.unmodifiableSet(commandHandlerClasses); }
   public Set<Class<?>> getQueryHandlerClasses() { return Collections.unmodifiableSet(queryHandlerClasses); }
 
+  // Enhanced accessors for type names (needed for gRPC registration)
+  public Set<String> getCommandTypes() {
+    return commandHandlers.keySet().stream()
+        .map(Class::getName)
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  public Set<String> getQueryTypes() {
+    return queryHandlers.keySet().stream()
+        .map(Class::getName)
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
+  public Set<String> getEventTypes() {
+    return eventHandlers.keySet().stream()
+        .map(Class::getName)
+        .collect(java.util.stream.Collectors.toSet());
+  }
+
   // Helper class
   public static class HandlerMethod {
     private final Class<?> beanClass;

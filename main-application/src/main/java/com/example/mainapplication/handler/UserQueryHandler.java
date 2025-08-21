@@ -4,6 +4,7 @@ import com.example.mainapplication.projection.UserProjection;
 import com.example.mainapplication.query.FindAllUsersQuery;
 import com.example.mainapplication.query.FindUserByEmailQuery;
 import com.example.mainapplication.query.FindUserByIdQuery;
+import com.example.mainapplication.query.FindUserBySanzar;
 import com.example.mainapplication.repository.UserProjectionRepository;
 import org.axonframework.config.ProcessingGroup;
 import org.axonframework.queryhandling.QueryHandler;
@@ -132,4 +133,10 @@ public class UserQueryHandler {
             throw e;
         }
     }
-}
+
+
+//    @QueryHandler
+//    public List<UserProjection> handle3(FindUserBySanzar query) {
+//       return List.of(new UserProjection());
+//    }
+    }
