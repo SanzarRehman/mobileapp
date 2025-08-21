@@ -51,13 +51,34 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-# Kafka topic configuration
   data:
     redis:
       host: localhost
       port: 6379
       database: 1
 
+# gRPC Server Configuration
+grpc:
+  server:
+    port: 9060
+    enable-reflection: true
+    max-inbound-message-size: 4MB
+    max-inbound-metadata-size: 8KB
+    keep-alive-time: 30s
+    keep-alive-timeout: 5s
+    keep-alive-without-calls: false
+    max-connection-idle: 60s
+    max-connection-age: 30s
+    max-connection-age-grace: 5s
+    permit-keep-alive-time: 5s
+    permit-keep-alive-without-calls: false
+    security:
+      enabled: false  # Will be enabled later with proper certificates
+      certificate-chain: classpath:certificates/server.crt
+      private-key: classpath:certificates/server.key
+      trust-cert-collection: classpath:certificates/ca.crt
+
+# Kafka topic configuration
 kafka:
   topics:
     events: axon-events
@@ -74,6 +95,13 @@ axon:
       days: 30
     cleanup:
       enabled: true
+
+# Service Discovery Configuration
+service:
+  discovery:
+    cleanup-interval: 60s
+    health-check-timeout: 30s
+    registration-ttl: 300s
 
 management:
   endpoints:
@@ -95,15 +123,20 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        grpc.server.calls: true
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
+        grpc.server.calls: 0.5, 0.95, 0.99
       sla:
         http.server.requests: 10ms, 50ms, 100ms, 200ms, 500ms
+        grpc.server.calls: 10ms, 50ms, 100ms, 200ms, 500ms
 
 logging:
   level:
     com.example: DEBUG
     org.springframework.kafka: INFO
+    net.devh.boot.grpc: DEBUG
+    io.grpc: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"

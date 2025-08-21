@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.example.grpc.common";
+option java_outer_classname = "CommandServiceProto";
+
+package commandservice;
+
+// Command Handling Service
+service CommandHandlingService {
+  // Register a command handler
+  rpc RegisterCommandHandler(RegisterCommandHandlerRequest) returns (RegisterCommandHandlerResponse);
+  
+  // Unregister a command handler
+  rpc UnregisterCommandHandler(UnregisterCommandHandlerRequest) returns (UnregisterCommandHandlerResponse);
+  
+  // Submit a command for processing
+  rpc SubmitCommand(SubmitCommandRequest) returns (SubmitCommandResponse);
+  
+  // Health check and heartbeat
+  rpc SendHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  
+  // Auto-discovery: Get available command handlers
+  rpc DiscoverCommandHandlers(DiscoverCommandHandlersRequest) returns (DiscoverCommandHandlersResponse);
+  
+  // Stream for real-time health updates
+  rpc HealthStream(HealthStreamRequest) returns (stream HealthStreamResponse);
+}
+
+// Service Discovery Service for auto-discovery of services
+service ServiceDiscoveryService {
+  // Register a service instance
+  rpc RegisterService(RegisterServiceRequest) returns (RegisterServiceResponse);
+  
+  // Unregister a service instance
+  rpc UnregisterService(UnregisterServiceRequest) returns (UnregisterServiceResponse);
+  
+  // Get all healthy services
+  rpc GetHealthyServices(GetHealthyServicesRequest) returns (GetHealthyServicesResponse);
+  
+  // Subscribe to service changes
+  rpc WatchServices(WatchServicesRequest) returns (stream ServiceChangeNotification);
+}
+
+// Messages for Command Handling
+message RegisterCommandHandlerRequest {
+  string instance_id = 1;
+  string service_name = 2;
+  string host = 3;
+  int32 port = 4;
+  repeated string command_types = 5;
+  map<string, string> metadata = 6;
+}
+
+message RegisterCommandHandlerResponse {
+  bool success = 1;
+  string message = 2;
+  string registration_id = 3;
+}
+
+message UnregisterCommandHandlerRequest {
+  string instance_id = 1;
+  repeated string command_types = 2;
+}
+
+message UnregisterCommandHandlerResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SubmitCommandRequest {
+  string command_id = 1;
+  string command_type = 2;
+  string aggregate_id = 3;
+  bytes payload = 4;
+  map<string, string> metadata = 5;
+  int64 timestamp = 6;
+}
+
+message SubmitCommandResponse {
+  bool success = 1;
+  string message = 2;
+  string result = 3;
+  string target_instance = 4;
+  string error_code = 5;
+}
+
+message HeartbeatRequest {
+  string instance_id = 1;
+  string service_name = 2;
+  HealthStatus status = 3;
+  map<string, string> metadata = 4;
+  int64 timestamp = 5;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  string message = 2;
+  int64 next_heartbeat_interval = 3; // in seconds
+}
+
+message DiscoverCommandHandlersRequest {
+  string command_type = 1;
+  bool only_healthy = 2;
+}
+
+message DiscoverCommandHandlersResponse {
+  repeated ServiceInstance instances = 1;
+  int32 total_count = 2;
+  int32 healthy_count = 3;
+}
+
+message HealthStreamRequest {
+  string instance_id = 1;
+}
+
+message HealthStreamResponse {
+  string instance_id = 1;
+  HealthStatus status = 2;
+  int64 timestamp = 3;
+  map<string, string> metadata = 4;
+}
+
+// Messages for Service Discovery
+message RegisterServiceRequest {
+  ServiceInstance service = 1;
+}
+
+message RegisterServiceResponse {
+  bool success = 1;
+  string message = 2;
+  string registration_id = 3;
+}
+
+message UnregisterServiceRequest {
+  string instance_id = 1;
+}
+
+message UnregisterServiceResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetHealthyServicesRequest {
+  string service_name = 1;
+  repeated string tags = 2;
+}
+
+message GetHealthyServicesResponse {
+  repeated ServiceInstance services = 1;
+}
+
+message WatchServicesRequest {
+  string service_name = 1;
+}
+
+message ServiceChangeNotification {
+  ServiceInstance service = 1;
+  ChangeType change_type = 2;
+  int64 timestamp = 3;
+}
+
+// Common Data Types
+message ServiceInstance {
+  string instance_id = 1;
+  string service_name = 2;
+  string host = 3;
+  int32 port = 4;
+  HealthStatus status = 5;
+  repeated string command_types = 6;
+  map<string, string> metadata = 7;
+  int64 last_heartbeat = 8;
+  string version = 9;
+  repeated string tags = 10;
+}
+
+enum HealthStatus {
+  UNKNOWN = 0;
+  HEALTHY = 1;
+  UNHEALTHY = 2;
+  STARTING = 3;
+  STOPPING = 4;
+}
+
+enum ChangeType {
+  ADDED = 0;
+  UPDATED = 1;
+  REMOVED = 2;
+}

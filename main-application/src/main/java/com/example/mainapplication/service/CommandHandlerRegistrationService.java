@@ -1,7 +1,11 @@
 package com.example.mainapplication.service;
 
+import com.example.grpc.common.*;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -19,10 +23,14 @@ import java.net.InetAddress;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Service responsible for registering the main application as a command handler
- * with the custom axon server and maintaining health status.
+ * with the custom axon server and maintaining health status using streaming heartbeats.
+ * 
+ * This service now uses gRPC for command handler registration and StreamingHeartbeatClient 
+ * for efficient heartbeat communication.
  */
 @Service
 @EnableScheduling
@@ -33,6 +41,13 @@ public class CommandHandlerRegistrationService {
     private final RestTemplate restTemplate;
     private final String customServerUrl;
     private final String instanceId;
+    private final StreamingHeartbeatClient streamingHeartbeatClient;
+    
+    // gRPC components for command handler registration
+    private final String grpcHost;
+    private final int grpcPort;
+    private ManagedChannel grpcChannel;
+    private CommandHandlingServiceGrpc.CommandHandlingServiceBlockingStub blockingStub;
     
     // Command types that this instance can handle
     private final List<String> supportedCommandTypes = Arrays.asList(
@@ -40,17 +55,49 @@ public class CommandHandlerRegistrationService {
         "com.example.mainapplication.command.UpdateUserCommand"
     );
 
+    @Autowired
     public CommandHandlerRegistrationService(
             @Qualifier("restTemplate") RestTemplate restTemplate,
             @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl,
-            @Value("${spring.application.name:main-application}") String applicationName) {
+            @Value("${spring.application.name:main-application}") String applicationName,
+            @Value("${app.custom-server.grpc.host:localhost}") String grpcHost,
+            @Value("${app.custom-server.grpc.port:9060}") int grpcPort,
+            StreamingHeartbeatClient streamingHeartbeatClient) {
         this.restTemplate = restTemplate;
         this.customServerUrl = customServerUrl;
         this.instanceId = generateInstanceId(applicationName);
+        this.streamingHeartbeatClient = streamingHeartbeatClient;
+        this.grpcHost = grpcHost;
+        this.grpcPort = grpcPort;
+        
+        initializeGrpcChannel();
+    }
+    
+    /**
+     * Initialize gRPC channel for command handler registration.
+     */
+    private void initializeGrpcChannel() {
+        try {
+            this.grpcChannel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort)
+                    .usePlaintext()
+                    .keepAliveTime(30, TimeUnit.SECONDS)
+                    .keepAliveTimeout(5, TimeUnit.SECONDS)
+                    .keepAliveWithoutCalls(true)
+                    .maxInboundMessageSize(4 * 1024 * 1024) // 4MB
+                    .build();
+            
+            this.blockingStub = CommandHandlingServiceGrpc.newBlockingStub(grpcChannel);
+            
+            logger.info("Initialized gRPC channel for registration to {}:{}", grpcHost, grpcPort);
+            
+        } catch (Exception e) {
+            logger.error("Failed to initialize gRPC channel for registration: {}", e.getMessage(), e);
+        }
     }
 
     /**
      * Register command handlers when the application is ready.
+     * The streaming heartbeat client will be automatically initialized.
      */
     @EventListener(ApplicationReadyEvent.class)
     @Async
@@ -62,6 +109,11 @@ public class CommandHandlerRegistrationService {
                 // Wait a bit for the custom server to be ready
                 Thread.sleep(5000);
                 registerAllCommandHandlers();
+                
+                // The StreamingHeartbeatClient will automatically start sending heartbeats
+                logger.info("Command handlers registered. Streaming heartbeats are active: {}", 
+                           streamingHeartbeatClient.isHealthStreamActive());
+                
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warn("Registration interrupted during startup delay");
@@ -94,77 +146,86 @@ public class CommandHandlerRegistrationService {
         if (allRegistered) {
             logger.info("All command handlers registered successfully for instance {}", instanceId);
         } else {
-            logger.warn("Some command handlers failed to register. Will retry on next heartbeat.");
+            logger.warn("Some command handlers failed to register. Will retry on next health check.");
         }
     }
 
     /**
-     * Register a single command handler with the custom server.
+     * Register a single command handler with the custom server using gRPC.
      */
     private void registerCommandHandler(String commandType) {
-        String url = customServerUrl + "/api/commands/handlers/" + instanceId + "/" + commandType;
-        
         try {
-            ResponseEntity<String> response = restTemplate.postForEntity(url, null, String.class);
+            logger.debug("Registering command handler for {} via gRPC", commandType);
             
-            if (response.getStatusCode() == HttpStatus.OK) {
-                logger.debug("Handler registered for {} on instance {}", commandType, instanceId);
+            RegisterCommandHandlerRequest request = RegisterCommandHandlerRequest.newBuilder()
+                    .setInstanceId(instanceId)
+                    .setServiceName("main-application")
+                    .setHost("localhost") // TODO: Get actual host
+                    .setPort(8080) // TODO: Get actual port from server.port
+                    .addCommandTypes(commandType)
+                    .putMetadata("version", "1.0.0")
+                    .putMetadata("registered_at", String.valueOf(System.currentTimeMillis()))
+                    .build();
+            
+            RegisterCommandHandlerResponse response = blockingStub.registerCommandHandler(request);
+            
+            if (response.getSuccess()) {
+                logger.info("Successfully registered handler for {} on instance {}", commandType, instanceId);
             } else {
-                throw new RuntimeException("Registration failed with status: " + response.getStatusCode());
+                logger.error("Failed to register handler for {}: {}", commandType, response.getMessage());
+                throw new RuntimeException("Registration failed: " + response.getMessage());
             }
+            
         } catch (Exception e) {
             logger.error("Failed to register handler for {} on instance {}: {}", 
-                        commandType, instanceId, e.getMessage());
+                    commandType, instanceId, e.getMessage());
             throw e;
         }
     }
 
     /**
-     * Send periodic heartbeat to maintain healthy status.
-     * Runs every 30 seconds.
+     * DEPRECATED: Individual heartbeat sending is replaced by streaming heartbeats.
+     * The StreamingHeartbeatClient automatically maintains the heartbeat stream.
      */
+    @Deprecated
     @Scheduled(fixedRate = 30000)
     public void sendHeartbeat() {
-        try {
-            String url = customServerUrl + "/api/commands/instances/" + instanceId + "/health?status=healthy";
-            
-            ResponseEntity<String> response = restTemplate.postForEntity(url, null, String.class);
-            
-            if (response.getStatusCode() == HttpStatus.OK) {
-                logger.trace("Heartbeat sent successfully for instance {}", instanceId);
-            } else {
-                logger.warn("Heartbeat failed with status: {} for instance {}", 
-                           response.getStatusCode(), instanceId);
-                // Try to re-register handlers
-                scheduleRetryRegistration();
-            }
-        } catch (Exception e) {
-            logger.error("Failed to send heartbeat for instance {}: {}", instanceId, e.getMessage());
-            // Try to re-register handlers on next heartbeat
-            scheduleRetryRegistration();
+        // This method is now deprecated and replaced by StreamingHeartbeatClient
+        // Check if streaming heartbeat is active
+        if (!streamingHeartbeatClient.isHeartbeatActive()) {
+            logger.warn("Streaming heartbeat is not active! Instance may appear unhealthy.");
+            // Attempt to restart the stream
+            streamingHeartbeatClient.reconnectHealthStream();
+        } else {
+            logger.trace("Streaming heartbeat is active for instance {}", instanceId);
         }
     }
 
     /**
-     * Check if custom server is available and re-register if needed.
+     * Monitor custom server availability and streaming heartbeat status.
      * Runs every 60 seconds.
      */
     @Scheduled(fixedRate = 60000)
     public void healthCheck() {
         try {
+            // Check if streaming heartbeat is working
+            if (!streamingHeartbeatClient.isHeartbeatActive()) {
+                logger.warn("Streaming heartbeat connection lost. Attempting to reconnect...");
+                streamingHeartbeatClient.reconnectHealthStream();
+            }
+            
+            // Optional: Check custom server HTTP health
             String healthUrl = customServerUrl + "/actuator/health";
             ResponseEntity<String> response = restTemplate.getForEntity(healthUrl, String.class);
             
             if (response.getStatusCode().is2xxSuccessful()) {
-                // Server is healthy, ensure we're registered
-                logger.trace("Custom server health check passed");
-                // Optionally re-register if we suspect we're not registered
-                // This is a safety net in case registration was lost
+                logger.trace("Custom server HTTP health check passed");
             } else {
-                logger.warn("Custom server health check failed: {}", response.getStatusCode());
+                logger.warn("Custom server HTTP health check failed: {}", response.getStatusCode());
             }
+            
         } catch (Exception e) {
-            logger.warn("Custom server health check failed: {}", e.getMessage());
+            logger.warn("Health check failed: {}", e.getMessage());
         }
     }
 
@@ -186,10 +247,14 @@ public class CommandHandlerRegistrationService {
 
     /**
      * Unregister command handlers when the application shuts down.
+     * The StreamingHeartbeatClient will automatically send a STOPPING status.
      */
     @PreDestroy
     public void onShutdown() {
-        logger.info("Application shutting down, unregistering command handlers...");
+        logger.info("Application shutting down, cleaning up command handler registration...");
+        
+        // The StreamingHeartbeatClient will automatically send STOPPING status
+        // and close the stream in its @PreDestroy method
         
         for (String commandType : supportedCommandTypes) {
             try {
@@ -198,20 +263,46 @@ public class CommandHandlerRegistrationService {
                 logger.warn("Failed to unregister handler for {}: {}", commandType, e.getMessage());
             }
         }
+        
+        // Close gRPC channel
+        if (grpcChannel != null && !grpcChannel.isShutdown()) {
+            grpcChannel.shutdown();
+            try {
+                if (!grpcChannel.awaitTermination(5, TimeUnit.SECONDS)) {
+                    grpcChannel.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                grpcChannel.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
+        logger.info("Command handler cleanup completed");
     }
 
     /**
-     * Unregister a command handler from the custom server.
+     * Unregister a command handler from the custom server using gRPC.
      */
     private void unregisterCommandHandler(String commandType) {
-        String url = customServerUrl + "/api/commands/handlers/" + instanceId + "/" + commandType;
-        
         try {
-            restTemplate.delete(url);
-            logger.debug("Handler unregistered for {} on instance {}", commandType, instanceId);
+            logger.debug("Unregistering command handler for {} via gRPC", commandType);
+            
+            UnregisterCommandHandlerRequest request = UnregisterCommandHandlerRequest.newBuilder()
+                    .setInstanceId(instanceId)
+                    .addCommandTypes(commandType)
+                    .build();
+            
+            UnregisterCommandHandlerResponse response = blockingStub.unregisterCommandHandler(request);
+            
+            if (response.getSuccess()) {
+                logger.info("Successfully unregistered handler for {} on instance {}", commandType, instanceId);
+            } else {
+                logger.warn("Failed to unregister handler for {}: {}", commandType, response.getMessage());
+            }
+            
         } catch (Exception e) {
             logger.error("Failed to unregister handler for {} on instance {}: {}", 
-                        commandType, instanceId, e.getMessage());
+                    commandType, instanceId, e.getMessage());
         }
     }
 
@@ -244,9 +335,30 @@ public class CommandHandlerRegistrationService {
     }
 
     /**
+     * Check if streaming heartbeats are active.
+     */
+    public boolean isHeartbeatActive() {
+        return streamingHeartbeatClient.isHeartbeatActive();
+    }
+
+    /**
+     * Get the streaming heartbeat client instance ID.
+     */
+    public String getStreamingInstanceId() {
+        return streamingHeartbeatClient.getInstanceId();
+    }
+
+    /**
      * Manually trigger registration (useful for testing).
      */
     public void forceRegistration() {
         registerAllCommandHandlers();
+    }
+
+    /**
+     * Manually trigger heartbeat stream reconnection.
+     */
+    public void forceHeartbeatReconnect() {
+        streamingHeartbeatClient.reconnectHealthStream();
     }
 }

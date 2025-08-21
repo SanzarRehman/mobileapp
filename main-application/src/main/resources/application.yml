@@ -65,11 +65,37 @@ spring:
       port: 6379
       database: 0
 
+# gRPC Client Configuration
+grpc:
+  client:
+    custom-axon-server:
+      address: static://localhost:9060
+      negotiation-type: plaintext
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+      keep-alive-without-calls: true
+      max-inbound-message-size: 4MB
+      max-inbound-metadata-size: 8KB
+      user-agent: main-application/1.0.0
+      # Connection management
+      deadline: 60s
+      # Retry configuration
+      retry-enabled: true
+      max-retry-attempts: 3
+      # Security (disabled for now)
+      security:
+        authority-override: localhost
+        trust-cert-collection: classpath:certificates/ca.crt
+        client-auth-enabled: false
+  # Explicitly disable gRPC server
+  server:
+    enabled: false
+
 axon:
   axonserver:
     enabled: false
 
-  
   # Configure event serialization
   serializer:
     general: jackson
@@ -80,6 +106,14 @@ axon:
     processors:
       my-subscribing-group:
         mode: subscribing
+
+# Service Discovery Configuration
+service:
+  discovery:
+    auto-register: true
+    heartbeat-interval: 30s
+    health-check-interval: 60s
+    retry-interval: 10s
 
 management:
   endpoints:
@@ -101,16 +135,21 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
+        grpc.client.calls: true
       percentiles:
         http.server.requests: 0.5, 0.95, 0.99
+        grpc.client.calls: 0.5, 0.95, 0.99
       sla:
         http.server.requests: 10ms, 50ms, 100ms, 200ms, 500ms
+        grpc.client.calls: 10ms, 50ms, 100ms, 200ms, 500ms
 
 logging:
   level:
     com.example: DEBUG
     org.axonframework: INFO
     org.springframework.kafka: INFO
+    net.devh.boot.grpc: DEBUG
+    io.grpc: INFO
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
@@ -118,6 +157,9 @@ logging:
 app:
   custom-server:
     url: http://localhost:8081
+    grpc:
+      host: localhost
+      port: 9060
 
 custom:
   axon:

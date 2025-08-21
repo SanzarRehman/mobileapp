@@ -13,6 +13,7 @@
     <description>Parent project for Axon Framework with Custom Server implementation</description>
 
     <modules>
+        <module>grpc-common</module>
         <module>main-application</module>
         <module>custom-axon-server</module>
     </modules>
