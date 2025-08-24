@@ -7,6 +7,8 @@ import com.example.customaxonserver.service.EventRoutingService;
 import com.example.customaxonserver.service.ServiceDiscoveryService;
 import com.example.customaxonserver.service.StreamingHeartbeatService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import net.devh.boot.grpc.server.service.GrpcService;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -64,7 +67,7 @@ public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.Comma
      */
     @Override
     public void registerHandlers(RegisterHandlersRequest request, StreamObserver<RegisterHandlersResponse> responseObserver) {
-        logger.info("Registering all handlers for instance: {} with {} commands, {} queries, {} events", 
+        logger.info("Registering all handlers for instance: {} with {} commands, {} queries, {} events",
                    request.getInstanceId(), 
                    request.getCommandTypesCount(),
                    request.getQueryTypesCount(), 
@@ -427,47 +430,63 @@ public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.Comma
             responseObserver.onCompleted();
         }
     }
-
+    private final Map<String, ManagedChannel> channelPool = new ConcurrentHashMap<>();
     @Override
     public void submitCommand(SubmitCommandRequest request, StreamObserver<SubmitCommandResponse> responseObserver) {
-        logger.debug("Submitting command: {} for aggregate: {}", request.getCommandType(), request.getAggregateId());
-        
+        logger.debug("📨 Submitting command: {} for aggregate: {}",
+            request.getCommandType(), request.getAggregateId());
+
         try {
-            // Route command to appropriate instance
-            String targetInstance = commandRoutingService.routeCommand(request.getCommandType(), request.getAggregateId());
-            
-            // Get service instance details
-            ServiceInstance serviceInstance = serviceDiscoveryService.getServiceInstance(targetInstance);
-            
-            if (serviceInstance == null) {
-                throw new RuntimeException("Target instance not found: " + targetInstance);
-            }
+            // 1️⃣ Find target instance dynamically
+            ServiceInstance targetInstance =
+                commandRoutingService.routeCommand(request.getCommandType(), request.getAggregateId());
+            String key = "localhost" + ":" + 8083;
 
-            // Forward command to target instance (this would be implemented via gRPC client call)
-            // For now, we'll simulate the response
-            SubmitCommandResponse response = SubmitCommandResponse.newBuilder()
-                    .setSuccess(true)
-                    .setMessage("Command submitted successfully")
-                    .setResult("Command processed")
-                    .setTargetInstance(targetInstance)
+            // 2️⃣ Get or create channel from pool
+            ManagedChannel channel = channelPool.computeIfAbsent(key, k -> {
+                logger.info("🔌 Creating new channel to {}", k);
+                return ManagedChannelBuilder.forAddress("localhost", 8083)
+                    .usePlaintext() // ❗ TLS can be added later
                     .build();
+            });
 
-            responseObserver.onNext(response);
+            // 3️⃣ Get stub
+            CommandHandlingServiceGrpc.CommandHandlingServiceBlockingStub stub =
+                CommandHandlingServiceGrpc.newBlockingStub(channel);
+
+            // 4️⃣ Forward request
+            SubmitCommandResponse targetResponse = stub.submitCommand(request);
+
+            // 5️⃣ Send response back to caller
+            responseObserver.onNext(targetResponse);
             responseObserver.onCompleted();
 
-            logger.debug("Successfully routed command {} to instance: {}", request.getCommandId(), targetInstance);
+            logger.debug("✅ Routed command {} to {}", request.getCommandId(), key);
 
-        } catch (Exception e) {
-            logger.error("Failed to submit command: {}", request.getCommandId(), e);
-            
-            SubmitCommandResponse response = SubmitCommandResponse.newBuilder()
+        } catch (Exception sre) {
+            logger.error("❌ gRPC call failed for command {}: {}", request.getCommandId(), sre.getMessage(), sre);
+
+            responseObserver.onNext(
+                SubmitCommandResponse.newBuilder()
                     .setSuccess(false)
-                    .setMessage("Failed to submit command: " + e.getMessage())
-                    .setErrorCode("ROUTING_ERROR")
-                    .build();
-
-            responseObserver.onNext(response);
+                    .setMessage("gRPC error: " + sre.getMessage())
+                    .setErrorCode("GRPC_CALL_ERROR")
+                    .build()
+            );
             responseObserver.onCompleted();
+
+        }
+    }
+
+    /**
+     * 🔄 Cleanup method (e.g., on shutdown or when instances are deregistered)
+     */
+    public void closeChannel(String host, int port) {
+        String key = host + ":" + port;
+        ManagedChannel channel = channelPool.remove(key);
+        if (channel != null) {
+            logger.info("🛑 Shutting down channel to {}", key);
+            channel.shutdown();
         }
     }
 

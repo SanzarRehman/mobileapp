@@ -1,5 +1,6 @@
 package com.example.customaxonserver.service;
 
+import com.example.grpc.common.ServiceInstance;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -27,11 +28,13 @@ public class CommandRoutingService {
     
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ServiceDiscoveryService serviceDiscoveryService;
     
     @Autowired
-    public CommandRoutingService(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
+    public CommandRoutingService(RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper, ServiceDiscoveryService serviceDiscoveryService) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+      this.serviceDiscoveryService = serviceDiscoveryService;
     }
     
     /**
@@ -42,11 +45,13 @@ public class CommandRoutingService {
      * @return The instance ID that should handle the command
      * @throws CommandRoutingException if no healthy instances are available
      */
-    public String routeCommand(String commandType, String aggregateId) {
+    public ServiceInstance routeCommand(String commandType, String aggregateId) {
         logger.debug("Routing command {} for aggregate {}", commandType, aggregateId);
-        
-        List<String> availableInstances = getHealthyInstances(commandType);
-        
+
+        List<ServiceInstance> availableInstances = serviceDiscoveryService.discoverServicesByCommandType(commandType);
+
+       // List<String> availableInstances = getHealthyInstances(commandType);
+
         if (availableInstances.isEmpty()) {
             logger.error("No healthy instances available for command type: {}", commandType);
             throw new CommandRoutingException("No healthy instances available for command type: " + commandType);
@@ -54,7 +59,7 @@ public class CommandRoutingService {
         
         // Use consistent hashing based on aggregate ID to ensure same aggregate
         // always goes to the same instance (when available)
-        String selectedInstance = selectInstanceForAggregate(availableInstances, aggregateId);
+        ServiceInstance selectedInstance = selectInstanceForAggregate(availableInstances, aggregateId);
         
         logger.debug("Selected instance {} for command {} on aggregate {}", 
                     selectedInstance, commandType, aggregateId);
@@ -260,7 +265,7 @@ public class CommandRoutingService {
         }
     }
     
-    private String selectInstanceForAggregate(List<String> instances, String aggregateId) {
+    private ServiceInstance selectInstanceForAggregate(List<ServiceInstance> instances, String aggregateId) {
         if (instances.size() == 1) {
             return instances.get(0);
         }

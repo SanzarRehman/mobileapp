@@ -1,5 +1,7 @@
 package com.example.mainapplication.command;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.axonframework.modelling.command.TargetAggregateIdentifier;
 
 public class CreateUserCommand {
@@ -9,8 +11,14 @@ public class CreateUserCommand {
     private final String username;
     private final String email;
     private final String fullName;
-    
-    public CreateUserCommand(String userId, String username, String email, String fullName) {
+
+    @JsonCreator
+    public CreateUserCommand(
+        @JsonProperty("userId") String userId,
+        @JsonProperty("username") String username,
+        @JsonProperty("email") String email,
+        @JsonProperty("fullName") String fullName
+    ) {
         this.userId = userId;
         this.username = username;
         this.email = email;

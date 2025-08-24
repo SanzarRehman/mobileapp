@@ -117,6 +117,11 @@ public class StreamingHeartbeatClient {
      * Send a unary heartbeat to report this instance's health status.
      */
     public void sendUnaryHeartbeat(HealthStatus status) {
+        if(1==1)
+        {
+            return;
+        }
+
         if (shuttingDown.get()) {
             return;
         }

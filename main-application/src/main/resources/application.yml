@@ -67,6 +67,24 @@ spring:
 
 # gRPC Client Configuration
 grpc:
+  server:
+    port: 8083
+    enable-reflection: true
+    max-inbound-message-size: 4MB
+    max-inbound-metadata-size: 8KB
+    keep-alive-time: 30s
+    keep-alive-timeout: 5s
+    keep-alive-without-calls: false
+    max-connection-idle: 60s
+    max-connection-age: 30s
+    max-connection-age-grace: 5s
+    permit-keep-alive-time: 5s
+    permit-keep-alive-without-calls: false
+    security:
+      enabled: false  # Will be enabled later with proper certificates
+      certificate-chain: classpath:certificates/server.crt
+      private-key: classpath:certificates/server.key
+      trust-cert-collection: classpath:certificates/ca.crt
   client:
     custom-axon-server:
       address: static://localhost:9060
@@ -88,9 +106,6 @@ grpc:
         authority-override: localhost
         trust-cert-collection: classpath:certificates/ca.crt
         client-auth-enabled: false
-  # Explicitly disable gRPC server
-  server:
-    enabled: false
 
 axon:
   axonserver:

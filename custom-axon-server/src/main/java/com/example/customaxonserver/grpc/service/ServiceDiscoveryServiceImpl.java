@@ -21,7 +21,7 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
     private static final Logger logger = LoggerFactory.getLogger(ServiceDiscoveryServiceImpl.class);
 
     private final ServiceDiscoveryService serviceDiscoveryService;
-    
+
     // Store active service watchers for real-time notifications
     private final ConcurrentMap<String, StreamObserver<ServiceChangeNotification>> serviceWatchers = new ConcurrentHashMap<>();
 
@@ -32,15 +32,15 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
 
     @Override
     public void registerService(RegisterServiceRequest request, StreamObserver<RegisterServiceResponse> responseObserver) {
-        logger.info("Registering service: {} instance: {}", 
+        logger.info("Registering service: {} instance: {}",
                    request.getService().getServiceName(), request.getService().getInstanceId());
-        
+
         try {
             serviceDiscoveryService.registerService(request.getService());
-            
+
             // Notify watchers about new service
             notifyServiceWatchers(request.getService(), ChangeType.ADDED);
-            
+
             RegisterServiceResponse response = RegisterServiceResponse.newBuilder()
                     .setSuccess(true)
                     .setMessage("Service registered successfully")
@@ -52,7 +52,7 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
 
         } catch (Exception e) {
             logger.error("Failed to register service: {}", request.getService().getInstanceId(), e);
-            
+
             RegisterServiceResponse response = RegisterServiceResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage("Failed to register service: " + e.getMessage())
@@ -66,17 +66,17 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
     @Override
     public void unregisterService(UnregisterServiceRequest request, StreamObserver<UnregisterServiceResponse> responseObserver) {
         logger.info("Unregistering service instance: {}", request.getInstanceId());
-        
+
         try {
             ServiceInstance serviceInstance = serviceDiscoveryService.getServiceInstance(request.getInstanceId());
-            
+
             serviceDiscoveryService.unregisterService(request.getInstanceId());
-            
+
             // Notify watchers about removed service
             if (serviceInstance != null) {
                 notifyServiceWatchers(serviceInstance, ChangeType.REMOVED);
             }
-            
+
             UnregisterServiceResponse response = UnregisterServiceResponse.newBuilder()
                     .setSuccess(true)
                     .setMessage("Service unregistered successfully")
@@ -87,7 +87,7 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
 
         } catch (Exception e) {
             logger.error("Failed to unregister service: {}", request.getInstanceId(), e);
-            
+
             UnregisterServiceResponse response = UnregisterServiceResponse.newBuilder()
                     .setSuccess(false)
                     .setMessage("Failed to unregister service: " + e.getMessage())
@@ -101,11 +101,11 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
     @Override
     public void getHealthyServices(GetHealthyServicesRequest request, StreamObserver<GetHealthyServicesResponse> responseObserver) {
         logger.debug("Getting healthy services for: {}", request.getServiceName());
-        
+
         try {
             List<ServiceInstance> healthyServices = serviceDiscoveryService.getHealthyServices(
                     request.getServiceName(), request.getTagsList());
-            
+
             GetHealthyServicesResponse response = GetHealthyServicesResponse.newBuilder()
                     .addAllServices(healthyServices)
                     .build();
@@ -115,7 +115,7 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
 
         } catch (Exception e) {
             logger.error("Failed to get healthy services for: {}", request.getServiceName(), e);
-            
+
             GetHealthyServicesResponse response = GetHealthyServicesResponse.newBuilder()
                     .build();
 
@@ -127,10 +127,10 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
     @Override
     public void watchServices(WatchServicesRequest request, StreamObserver<ServiceChangeNotification> responseObserver) {
         logger.debug("Starting service watch for: {}", request.getServiceName());
-        
+
         String watchKey = request.getServiceName();
         serviceWatchers.put(watchKey, responseObserver);
-        
+
         // Send initial state of all services
         try {
             List<ServiceInstance> allServices = serviceDiscoveryService.getAllServices(request.getServiceName());
@@ -140,20 +140,20 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
                         .setChangeType(ChangeType.ADDED)
                         .setTimestamp(System.currentTimeMillis())
                         .build();
-                
+
                 responseObserver.onNext(notification);
             }
         } catch (Exception e) {
             logger.error("Failed to send initial service state for watch: {}", request.getServiceName(), e);
         }
-        
+
         // The stream will be kept alive and updated via notifyServiceWatchers method
     }
 
     private void notifyServiceWatchers(ServiceInstance serviceInstance, ChangeType changeType) {
         String serviceName = serviceInstance.getServiceName();
         StreamObserver<ServiceChangeNotification> observer = serviceWatchers.get(serviceName);
-        
+
         if (observer != null) {
             try {
                 ServiceChangeNotification notification = ServiceChangeNotification.newBuilder()
@@ -161,7 +161,7 @@ public class ServiceDiscoveryServiceImpl extends ServiceDiscoveryServiceGrpc.Ser
                         .setChangeType(changeType)
                         .setTimestamp(System.currentTimeMillis())
                         .build();
-                
+
                 observer.onNext(notification);
             } catch (Exception e) {
                 logger.warn("Failed to notify service watcher for service: {}", serviceName, e);

@@ -3,6 +3,7 @@ package com.example.customaxonserver.controller;
 import com.example.customaxonserver.model.CommandMessage;
 import com.example.customaxonserver.model.CommandResponse;
 import com.example.customaxonserver.service.CommandRoutingService;
+import com.example.grpc.common.ServiceInstance;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -61,7 +62,7 @@ public class CommandController {
         
         long startTime = System.nanoTime();
         try {
-            String targetInstance = commandRoutingService.routeCommand(
+            ServiceInstance targetInstance = commandRoutingService.routeCommand(
                     commandMessage.getCommandType(), 
                     commandMessage.getAggregateId()
             );
@@ -95,24 +96,12 @@ public class CommandController {
     /**
      * Forwards a command to the target instance for processing.
      */
-    private CommandResponse forwardCommandToInstance(String targetInstance, CommandMessage commandMessage) {
+    private CommandResponse forwardCommandToInstance(ServiceInstance targetInstance, CommandMessage commandMessage) {
         try {
-            // Parse instance ID to extract connection details
-            // Expected format: applicationName-hostname-port-timestamp
-            String[] parts = targetInstance.split("-");
-            if (parts.length < 4) {
-                throw new RuntimeException("Invalid instance ID format: " + targetInstance + ", expected applicationName-hostname-port-timestamp");
-            }
 
-            String hostname = "localhost"; // second part is hostname
-            String port = "8080";      // third part is port
+            String hostname = targetInstance.getHost();
+            int port = targetInstance.getPort();
 
-            // For local development, default to localhost if hostname is complex
-            if (hostname.contains(".") && hostname.endsWith(".local")) {
-                hostname = "localhost";
-            }
-
-            // Construct the target URL
             String targetUrl = "http://" + hostname + ":" + port + "/api/internal/commands/process";
 
             // Create the payload to send
@@ -153,7 +142,7 @@ public class CommandController {
                         String status = (String) responseBody.get("status");
 
                         if ("SUCCESS".equals(status)) {
-                            return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
+                            return CommandResponse.success(commandMessage.getCommandId(), targetInstance.getInstanceId(),
                                     (String) responseBody.get("result"));
                         } else {
                             return CommandResponse.error(commandMessage.getCommandId(),
@@ -161,7 +150,7 @@ public class CommandController {
                         }
                     } else {
                         // Success but no body - treat as success
-                        return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
+                        return CommandResponse.success(commandMessage.getCommandId(), targetInstance.getInstanceId(),
                                 "Command processed successfully");
                     }
                 } else {
@@ -175,7 +164,7 @@ public class CommandController {
                     logger.warn("Connection closed unexpectedly for command {}, but command may have been processed",
                             commandMessage.getCommandId());
                     // Assume success since the server often processes the command even when connection drops
-                    return CommandResponse.success(commandMessage.getCommandId(), targetInstance,
+                    return CommandResponse.success(commandMessage.getCommandId(), targetInstance.getInstanceId(),
                             "Command processed (connection dropped)");
                 } else {
                     throw e; // Re-throw other connection issues

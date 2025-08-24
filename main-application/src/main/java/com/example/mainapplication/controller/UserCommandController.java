@@ -5,7 +5,7 @@ import com.example.mainapplication.command.UpdateUserCommand;
 import com.example.mainapplication.dto.CreateUserRequest;
 import com.example.mainapplication.dto.UpdateUserRequest;
 import com.example.mainapplication.dto.CommandResponse;
-import com.example.mainapplication.service.CustomServerCommandService;
+import com.example.mainapplication.service.HighPerformanceCommandRouter;
 import org.axonframework.commandhandling.GenericCommandMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +27,10 @@ import java.util.concurrent.CompletableFuture;
 public class UserCommandController {
 
     private static final Logger logger = LoggerFactory.getLogger(UserCommandController.class);
-    private final CustomServerCommandService customServerCommandService;
+    private final HighPerformanceCommandRouter highPerformanceCommandRouter;
 
-    public UserCommandController(CustomServerCommandService customServerCommandService) {
-        this.customServerCommandService = customServerCommandService;
+    public UserCommandController( HighPerformanceCommandRouter highPerformanceCommandRouter) {
+      this.highPerformanceCommandRouter = highPerformanceCommandRouter;
     }
 
     /**
@@ -54,8 +54,8 @@ public class UserCommandController {
             try {
                 // Route command to custom server
                 var commandMessage = GenericCommandMessage.asCommandMessage(command);
-                customServerCommandService.routeCommand(commandMessage, String.class);
-                
+             //   customServerCommandService.routeCommand(commandMessage, String.class);
+               highPerformanceCommandRouter.routeCommand(commandMessage,String.class, false);
                 logger.info("User created successfully with ID: {}", userId);
                 CommandResponse response = new CommandResponse(
                         userId,
@@ -97,8 +97,8 @@ public class UserCommandController {
             try {
                 // Route command to custom server
                 var commandMessage = GenericCommandMessage.asCommandMessage(command);
-                customServerCommandService.routeCommand(commandMessage, String.class);
-                
+                highPerformanceCommandRouter.routeCommand(commandMessage,String.class, false);
+
                 logger.info("User updated successfully with ID: {}", userId);
                 CommandResponse response = new CommandResponse(
                         userId,
