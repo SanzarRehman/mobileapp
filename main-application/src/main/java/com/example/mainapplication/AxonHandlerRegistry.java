@@ -1,6 +1,8 @@
 package com.example.mainapplication;
 
 import jakarta.annotation.Nonnull;
+import org.apache.pulsar.shade.org.apache.avro.Schema;
+import org.apache.pulsar.shade.org.apache.avro.reflect.ReflectData;
 import org.axonframework.commandhandling.CommandHandler;
 import org.axonframework.eventhandling.EventHandler;
 import org.axonframework.queryhandling.QueryHandler;
@@ -23,6 +25,7 @@ public class AxonHandlerRegistry {
   private final Map<Class<?>, List<HandlerMethod>> eventHandlers = new HashMap<>();
   private final Map<Class<?>, List<HandlerMethod>> commandHandlers = new HashMap<>();
   private final Map<Class<?>, List<HandlerMethod>> queryHandlers = new HashMap<>();
+  private final Map<String, Schema> eventClassToAvroSchema = new HashMap<>();
 
   private final Set<Class<?>> eventHandlerClasses = new HashSet<>();
   private final Set<Class<?>> commandHandlerClasses = new HashSet<>();
@@ -76,6 +79,10 @@ public class AxonHandlerRegistry {
       eventHandlers.computeIfAbsent(paramType, k -> new ArrayList<>())
           .add(new HandlerMethod(targetClass, executable));
       eventHandlerClasses.add(targetClass);
+
+      // Generate Avro schema and use fully qualified class name as key
+      Schema avroSchema = ReflectData.get().getSchema(paramType);
+      eventClassToAvroSchema.put(paramType.getName(), avroSchema);
     } else if (executable.isAnnotationPresent(CommandHandler.class)) {
       commandHandlers.computeIfAbsent(paramType, k -> new ArrayList<>())
           .add(new HandlerMethod(targetClass, executable));
@@ -91,6 +98,8 @@ public class AxonHandlerRegistry {
   public Map<Class<?>, List<HandlerMethod>> getEventHandlers() { return Collections.unmodifiableMap(eventHandlers); }
   public Map<Class<?>, List<HandlerMethod>> getCommandHandlers() { return Collections.unmodifiableMap(commandHandlers); }
   public Map<Class<?>, List<HandlerMethod>> getQueryHandlers() { return Collections.unmodifiableMap(queryHandlers); }
+  public Map<String, Schema> getEventClassToAvroSchema() { return Collections.unmodifiableMap(eventClassToAvroSchema); }
+
 
   public Set<Class<?>> getEventHandlerClasses() { return Collections.unmodifiableSet(eventHandlerClasses); }
   public Set<Class<?>> getCommandHandlerClasses() { return Collections.unmodifiableSet(commandHandlerClasses); }

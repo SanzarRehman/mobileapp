@@ -34,6 +34,12 @@ service CommandHandlingService {
   rpc HealthStream(HealthStreamRequest) returns (stream HealthStreamResponse);
 }
 
+service EventHandlingService {
+
+  rpc SubmitEvent(SubmitEventRequest) returns (SubmitEventResponse);
+
+}
+
 // Service Discovery Service for auto-discovery of services
 service ServiceDiscoveryService {
   // Register a service instance
@@ -59,6 +65,7 @@ message RegisterHandlersRequest {
   repeated string query_types = 6;
   repeated string event_types = 7;
   map<string, string> metadata = 8;
+  map<string, string> schema = 9;
 }
 
 message RegisterHandlersResponse {
@@ -182,6 +189,22 @@ message HeartbeatRequest {
   HealthStatus status = 3;
   map<string, string> metadata = 4;
   int64 timestamp = 5;
+}
+message SubmitEventRequest {
+  string event_id = 1;
+  string event_type = 2;
+  string aggregate_id = 3;
+  bytes payload = 4;
+  map<string, string> metadata = 5;
+  int64 timestamp = 6;
+}
+
+message SubmitEventResponse {
+  bool success = 1;
+  string message = 2;
+  string result = 3;
+  string target_instance = 4;
+  string error_code = 5;
 }
 
 message HeartbeatResponse {

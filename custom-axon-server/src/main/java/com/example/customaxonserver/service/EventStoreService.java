@@ -3,7 +3,6 @@ package com.example.customaxonserver.service;
 import com.example.customaxonserver.entity.EventEntity;
 import com.example.customaxonserver.entity.SnapshotEntity;
 import com.example.customaxonserver.exception.EventStoreException;
-import com.example.customaxonserver.messaging.DeadLetterQueueHandler;
 import com.example.customaxonserver.repository.EventRepository;
 import com.example.customaxonserver.resilience.CircuitBreakerService;
 import com.example.customaxonserver.resilience.RetryService;
@@ -35,7 +34,6 @@ public class EventStoreService {
     private final ObjectMapper objectMapper;
     private final CircuitBreakerService circuitBreakerService;
     private final RetryService retryService;
-    private final DeadLetterQueueHandler deadLetterQueueHandler;
     private final ConcurrencyControlService concurrencyControlService;
     private SnapshotService snapshotService;
 
@@ -44,13 +42,11 @@ public class EventStoreService {
                            ObjectMapper objectMapper,
                            CircuitBreakerService circuitBreakerService,
                            RetryService retryService,
-                           DeadLetterQueueHandler deadLetterQueueHandler,
                            ConcurrencyControlService concurrencyControlService) {
         this.eventRepository = eventRepository;
         this.objectMapper = objectMapper;
         this.circuitBreakerService = circuitBreakerService;
         this.retryService = retryService;
-        this.deadLetterQueueHandler = deadLetterQueueHandler;
         this.concurrencyControlService = concurrencyControlService;
     }
 

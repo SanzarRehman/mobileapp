@@ -6,7 +6,6 @@ import io.github.resilience4j.retry.RetryRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
-import org.springframework.kafka.KafkaException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -89,7 +88,6 @@ public class RetryService {
 
     private boolean isRetryableException(Throwable throwable) {
         return throwable instanceof DataAccessException ||
-               throwable instanceof KafkaException ||
                throwable instanceof ResourceAccessException ||
                throwable instanceof TimeoutException ||
                (throwable instanceof RuntimeException && 

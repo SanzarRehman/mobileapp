@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: custom-axon-server
+  pulsar:
+    admin:
+      service-url: http://127.0.0.1:8080
+    client:
+      service-url: pulsar://127.0.0.1:6650
   
   datasource:
     url: jdbc:postgresql://localhost:5432/axon_server
@@ -107,19 +112,13 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info
   endpoint:
     health:
       show-details: always
       show-components: always
     metrics:
       enabled: true
-    prometheus:
-      enabled: true
-  metrics:
-    export:
-      prometheus:
-        enabled: true
     distribution:
       percentiles-histogram:
         http.server.requests: true

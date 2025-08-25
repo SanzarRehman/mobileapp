@@ -6,15 +6,16 @@ import com.example.customaxonserver.service.QueryRoutingService;
 import com.example.customaxonserver.service.EventRoutingService;
 import com.example.customaxonserver.service.ServiceDiscoveryService;
 import com.example.customaxonserver.service.StreamingHeartbeatService;
+import com.example.customaxonserver.util.pulser.PulsarProducerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
-import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
@@ -32,6 +33,7 @@ import java.util.concurrent.ConcurrentMap;
  * Integrated with StreamingHeartbeatService and clean Redis architecture.
  */
 @GrpcService
+@Component
 public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.CommandHandlingServiceImplBase {
 
     private static final Logger logger = LoggerFactory.getLogger(CommandHandlingServiceImpl.class);
@@ -42,23 +44,24 @@ public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.Comma
     private final ServiceDiscoveryService serviceDiscoveryService;
     private final StreamingHeartbeatService streamingHeartbeatService;
     private final ObjectMapper objectMapper;
-    
+    private final PulsarProducerFactory pulsarProducerFactory;
     // Store active health streams for real-time updates
     private final ConcurrentMap<String, StreamObserver<HealthStreamResponse>> healthStreams = new ConcurrentHashMap<>();
 
     @Autowired
     public CommandHandlingServiceImpl(CommandRoutingService commandRoutingService,
-                                    QueryRoutingService queryRoutingService,
-                                    EventRoutingService eventRoutingService,
-                                    ServiceDiscoveryService serviceDiscoveryService,
-                                    StreamingHeartbeatService streamingHeartbeatService,
-                                    ObjectMapper objectMapper) {
+                                      QueryRoutingService queryRoutingService,
+                                      EventRoutingService eventRoutingService,
+                                      ServiceDiscoveryService serviceDiscoveryService,
+                                      StreamingHeartbeatService streamingHeartbeatService,
+                                      ObjectMapper objectMapper, PulsarProducerFactory pulsarProducerFactory) {
         this.commandRoutingService = commandRoutingService;
         this.queryRoutingService = queryRoutingService;
         this.eventRoutingService = eventRoutingService;
         this.serviceDiscoveryService = serviceDiscoveryService;
         this.streamingHeartbeatService = streamingHeartbeatService;
         this.objectMapper = objectMapper;
+      this.pulsarProducerFactory = pulsarProducerFactory;
     }
 
     /**
@@ -93,8 +96,13 @@ public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.Comma
                     .setVersion("1.0.0")
                     .build();
 
+            Map<String, String> schemaMap = request.getSchemaMap();
+
             // Register with service discovery
             serviceDiscoveryService.registerService(serviceInstance);
+
+
+            pulsarProducerFactory.createProducers(request.getEventTypesList());
 
             // Register command handlers
             for (String commandType : request.getCommandTypesList()) {
@@ -361,6 +369,7 @@ public class CommandHandlingServiceImpl extends CommandHandlingServiceGrpc.Comma
 
             // Register with service discovery
             serviceDiscoveryService.registerService(serviceInstance);
+
 
             // Register each command handler
             for (String commandType : request.getCommandTypesList()) {

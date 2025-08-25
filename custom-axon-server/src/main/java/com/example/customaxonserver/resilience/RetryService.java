@@ -7,7 +7,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.RedisConnectionFailureException;
-import org.springframework.kafka.KafkaException;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -89,7 +88,6 @@ public class RetryService {
 
     private boolean isRetryableException(Throwable throwable) {
         return throwable instanceof DataAccessException ||
-               throwable instanceof KafkaException ||
                throwable instanceof RedisConnectionFailureException ||
                throwable instanceof TimeoutException ||
                (throwable instanceof RuntimeException && 

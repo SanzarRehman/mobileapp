@@ -1,5 +1,11 @@
 package com.example.mainapplication.service;
 
+import com.example.grpc.common.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Struct;
+import io.grpc.ManagedChannel;
+import io.grpc.ManagedChannelBuilder;
 import org.axonframework.eventhandling.DomainEventMessage;
 import org.axonframework.eventhandling.EventMessage;
 import org.slf4j.Logger;
@@ -13,8 +19,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
@@ -30,12 +38,20 @@ public class CustomServerEventPublisher {
     
     private final RestTemplate restTemplate;
     private final String customServerUrl;
+    private final String masterGrpcServerUrl;
+    private final Integer masterGrpcServerPort;
+    private final ObjectMapper objectMapper;  // Reuse across calls
+    private final Map<Class<?>, Field> aggregateIdFieldCache = new ConcurrentHashMap<>();
+
 
     public CustomServerEventPublisher(
-            @Qualifier("restTemplate") RestTemplate restTemplate,
-            @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl) {
+        @Qualifier("restTemplate") RestTemplate restTemplate,
+        @Value("${app.custom-server.url:http://localhost:8081}") String customServerUrl, @org.springframework.beans.factory.annotation.Value("${app.grpc-server.url:localhost}")String masterGrpcServerUrl, @org.springframework.beans.factory.annotation.Value("${app.grpc-server.port:9060}")int masterGrpcServerPort, ObjectMapper objectMapper) {
         this.restTemplate = restTemplate;
         this.customServerUrl = customServerUrl;
+      this.masterGrpcServerUrl = masterGrpcServerUrl;
+      this.masterGrpcServerPort = masterGrpcServerPort;
+      this.objectMapper = objectMapper;
     }
 
     /**
@@ -46,31 +62,48 @@ public class CustomServerEventPublisher {
     public void publishEvent(EventMessage<?> eventMessage) {
         try {
             logger.debug("Publishing event {} to custom server", eventMessage.getPayloadType().getSimpleName());
-            
+
+
+            Object payloadObj = eventMessage.getPayload();
+            ByteString payloadBytes;
+
+            boolean useProtobufStruct = true; // or false, based on your configuration
+            try {
+                if (useProtobufStruct) {
+                    Map<String, Object> map = objectMapper.convertValue(payloadObj, Map.class);
+                    Struct.Builder structBuilder = Struct.newBuilder();
+                    map.forEach((k, v) -> structBuilder.putFields(k, convertToValue(v)));
+                    payloadBytes = structBuilder.build().toByteString();
+                } else {
+                    payloadBytes = ByteString.copyFromUtf8(objectMapper.writeValueAsString(payloadObj));
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to serialize command payload", e);
+            }
             // Create event payload for custom server
             Map<String, Object> eventPayload = createEventPayload(eventMessage);
-            
+
             // Send to custom server
-            String url = customServerUrl + "/api/events/publish";
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(eventPayload, headers);
-            
-            ResponseEntity<String> response = restTemplate.postForEntity(url, request, String.class);
-            
-            if (response.getStatusCode().is2xxSuccessful()) {
-                logger.debug("Successfully published event {} to custom server", 
-                           eventMessage.getIdentifier());
-            } else {
-                logger.error("Failed to publish event to custom server: {}", response.getStatusCode());
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error publishing event {} to custom server: {}", 
-                        eventMessage.getIdentifier(), e.getMessage(), e);
-            // Don't throw exception to avoid breaking the main flow
+
+            ManagedChannel channel = ManagedChannelBuilder
+                .forAddress(masterGrpcServerUrl, masterGrpcServerPort)
+                .usePlaintext()
+                .build();
+
+            SubmitEventRequest request = SubmitEventRequest.newBuilder()
+                .setEventId(eventMessage.getIdentifier())
+                .setAggregateId(eventPayload.get("aggregateId") != null ? eventPayload.get("aggregateId").toString() : "")
+                .setEventType(eventMessage.getPayloadType().getName())
+                .setPayload(payloadBytes)
+                .build();
+
+            EventHandlingServiceGrpc.EventHandlingServiceBlockingStub stub =
+                EventHandlingServiceGrpc.newBlockingStub(channel);
+
+            SubmitEventResponse response = stub.submitEvent(request);
+
+        } catch (RuntimeException e) {
+          throw new RuntimeException(e);
         }
     }
 
@@ -102,5 +135,18 @@ public class CustomServerEventPublisher {
         }
         
         return payload;
+    }
+
+    /**
+     * Convert Java object to Protobuf Value.
+     * Can be extended recursively for nested maps or lists.
+     */
+    private com.google.protobuf.Value convertToValue(Object obj) {
+        if (obj == null) return com.google.protobuf.Value.newBuilder().setNullValueValue(0).build();
+        if (obj instanceof String) return com.google.protobuf.Value.newBuilder().setStringValue((String) obj).build();
+        if (obj instanceof Number) return com.google.protobuf.Value.newBuilder().setNumberValue(((Number) obj).doubleValue()).build();
+        if (obj instanceof Boolean) return com.google.protobuf.Value.newBuilder().setBoolValue((Boolean) obj).build();
+        // Fallback: convert to string
+        return com.google.protobuf.Value.newBuilder().setStringValue(obj.toString()).build();
     }
 }

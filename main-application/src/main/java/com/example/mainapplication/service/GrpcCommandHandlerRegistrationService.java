@@ -4,6 +4,8 @@ import com.example.grpc.common.*;
 import com.example.mainapplication.AxonHandlerRegistry;
 import io.grpc.StatusRuntimeException;
 import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.shade.org.apache.avro.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +59,7 @@ public class GrpcCommandHandlerRegistrationService {
 
     private final String instanceId;
     private final String serviceHost;
+    private final PulsarDynamicConsumerService pulsarDynamicConsumerService;
     private final StreamingHeartbeatClient streamingHeartbeatClient;
     private final AxonHandlerRegistry axonHandlerRegistry;
     
@@ -64,13 +67,17 @@ public class GrpcCommandHandlerRegistrationService {
     private List<String> commandTypes;
     private List<String> queryTypes;
     private List<String> eventTypes;
+    private Map<String, String> schemaMap = new HashMap<>();
+
+
 
     private volatile boolean registered = false;
 
     @Autowired
-    public GrpcCommandHandlerRegistrationService(StreamingHeartbeatClient streamingHeartbeatClient,
-                                               AxonHandlerRegistry axonHandlerRegistry) {
-        this.instanceId = generateInstanceId();
+    public GrpcCommandHandlerRegistrationService(PulsarDynamicConsumerService pulsarDynamicConsumerService, StreamingHeartbeatClient streamingHeartbeatClient,
+                                                 AxonHandlerRegistry axonHandlerRegistry) {
+      this.pulsarDynamicConsumerService = pulsarDynamicConsumerService;
+      this.instanceId = generateInstanceId();
         this.serviceHost = getLocalHostAddress();
         this.streamingHeartbeatClient = streamingHeartbeatClient;
         this.axonHandlerRegistry = axonHandlerRegistry;
@@ -117,7 +124,11 @@ public class GrpcCommandHandlerRegistrationService {
      */
     private void autoDiscoverHandlerTypes() {
         logger.info("Auto-discovering handler types from AxonHandlerRegistry...");
-        
+        Map<String, Schema> eventClassToAvroSchema = new HashMap<>();
+        eventClassToAvroSchema = axonHandlerRegistry.getEventClassToAvroSchema();
+        for (Map.Entry<String, Schema> entry : eventClassToAvroSchema.entrySet()) {
+            schemaMap.put(entry.getKey(), entry.getValue().toString()); // Avro Schema JSON
+        }
         // Extract command types
         commandTypes = axonHandlerRegistry.getCommandHandlers().keySet().stream()
                 .map(Class::getName)
@@ -147,7 +158,7 @@ public class GrpcCommandHandlerRegistrationService {
      * Auto-discover and register ALL handler types for this service instance.
      * Uses the new unified RegisterHandlers gRPC method.
      */
-    private void autoRegisterAllHandlers() {
+    private void autoRegisterAllHandlers() throws PulsarClientException {
         int totalHandlers = commandTypes.size() + queryTypes.size() + eventTypes.size();
         logger.info("Auto-registering {} total handlers for instance {} (Commands: {}, Queries: {}, Events: {})", 
                    totalHandlers, instanceId, commandTypes.size(), queryTypes.size(), eventTypes.size());
@@ -172,12 +183,22 @@ public class GrpcCommandHandlerRegistrationService {
                     .addAllQueryTypes(queryTypes)
                     .addAllEventTypes(eventTypes)
                     .putAllMetadata(metadata)
+                    .putAllSchema(schemaMap)
                     .build();
 
             RegisterHandlersResponse response = commandHandlingStub.registerHandlers(request);
 
             if (response.getSuccess()) {
+
+
                 registered = true;
+
+                for(String cmd : eventTypes) {
+                    String simpleName = cmd.substring(cmd.lastIndexOf('.') + 1);
+                    pulsarDynamicConsumerService.subscribeToTopic(simpleName, applicationName);
+                     logger.debug("Consumer added: {}", cmd);
+                }
+
                 HandlerRegistrationSummary summary = response.getSummary();
                 logger.info("Successfully auto-registered ALL handlers for instance {}", instanceId);
                 logger.info("Registration summary - Commands: {}, Queries: {}, Events: {}", 
@@ -506,7 +527,7 @@ public class GrpcCommandHandlerRegistrationService {
     /**
      * Manually trigger registration (useful for testing).
      */
-    public void forceRegistration() {
+    public void forceRegistration() throws PulsarClientException {
         registered = false;
         autoRegisterAllHandlers();
     }

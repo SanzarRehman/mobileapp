@@ -9,7 +9,7 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.kafka.KafkaException;
+
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -178,22 +178,22 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
     }
 
-    @ExceptionHandler(KafkaException.class)
-    public ResponseEntity<ErrorResponse> handleKafkaException(
-            KafkaException ex, WebRequest request) {
-        
-        ErrorResponse errorResponse = ErrorResponse.builder()
-                .timestamp(LocalDateTime.now())
-                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
-                .error("Messaging Service Unavailable")
-                .message("Message processing is temporarily unavailable")
-                .path(request.getDescription(false).replace("uri=", ""))
-                .correlationId(MDC.get("correlationId"))
-                .build();
-
-        logger.error("Kafka error", ex);
-        return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
-    }
+//    @ExceptionHandler(KafkaException.class)
+//    public ResponseEntity<ErrorResponse> handleKafkaException(
+//            KafkaException ex, WebRequest request) {
+//
+//        ErrorResponse errorResponse = ErrorResponse.builder()
+//                .timestamp(LocalDateTime.now())
+//                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+//                .error("Messaging Service Unavailable")
+//                .message("Message processing is temporarily unavailable")
+//                .path(request.getDescription(false).replace("uri=", ""))
+//                .correlationId(MDC.get("correlationId"))
+//                .build();
+//
+//        logger.error("Kafka error", ex);
+//        return new ResponseEntity<>(errorResponse, HttpStatus.SERVICE_UNAVAILABLE);
+//    }
 
     @ExceptionHandler(TimeoutException.class)
     public ResponseEntity<ErrorResponse> handleTimeoutException(
