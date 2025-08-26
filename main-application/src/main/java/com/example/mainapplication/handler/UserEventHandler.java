@@ -38,8 +38,8 @@ public class UserEventHandler {
      */
     @EventHandler
     public void on(UserCreatedEvent event) {
-        logger.info("🎉 EVENT HANDLER: Processing UserCreatedEvent for user: {}", event.getUserId());
-        logger.info("🎉 EVENT HANDLER: User details - username: {}, email: {}, fullName: {}", 
+        logger.info(" EVENT HANDLER: Processing UserCreatedEvent for user: {}", event.getUserId());
+        logger.info(" EVENT HANDLER: User details - username: {}, email: {}, fullName: {}",
                    event.getUsername(), event.getEmail(), event.getFullName());
         
         try {
