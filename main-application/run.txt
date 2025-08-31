@@ -1,0 +1,112 @@
+Step 1: Start the Infrastructure
+First, start all the infrastructure services:
+
+docker-compose up -d
+This will start:
+
+PostgreSQL (port 5432)
+Redis (port 6379)
+Kafka + Zookeeper (port 9092)
+Kafka UI (port 8090)
+Prometheus (port 9090)
+Grafana (port 3000)
+Step 2: Wait for Services to be Ready
+Check that all services are healthy:
+
+docker-compose ps
+You should see all services as "healthy" or "running".
+
+Step 3: Build and Start Your Applications
+Build the applications:
+
+mvn clean package -DskipTests
+Start the Custom Axon Server:
+
+mvn spring-boot:run -pl custom-axon-server
+In another terminal, start the Main Application:
+
+mvn spring-boot:run -pl main-application
+Step 4: End-to-End Testing
+1. Health Check Testing
+Test Custom Axon Server Health:
+
+curl http://localhost:8081/actuator/health | jq
+Test Main Application Health:
+
+curl http://localhost:8080/actuator/health | jq
+You should see all health indicators (database, kafka, redis, custom-server) reporting as UP.
+
+2. Metrics Testing
+Check Prometheus Metrics:
+
+# Custom Axon Server metrics
+curl http://localhost:8081/actuator/prometheus | grep custom_axon_server
+
+# Main Application metrics  
+curl http://localhost:8080/actuator/prometheus | grep main_application
+3. Correlation ID Testing
+Test with correlation ID:
+
+curl -H "X-Correlation-ID: test-e2e-123" http://localhost:8081/actuator/health -v
+Check that the correlation ID is returned in the response headers.
+
+4. Infrastructure Monitoring
+Kafka UI: Visit http://localhost:8090 to see Kafka topics and messages
+
+Prometheus: Visit http://localhost:9090 to see metrics collection
+
+Go to Status > Targets to verify your applications are being scraped
+Try queries like custom_axon_server_commands_processed_total
+Grafana: Visit http://localhost:3000 (admin/admin)
+
+You can create dashboards to visualize your application metrics
+5. Database Verification
+Connect to PostgreSQL:
+
+docker exec -it axon-postgres psql -U axon_user -d axon_main
+Check that your application tables are created by Flyway migrations.
+
+6. Redis Verification
+Connect to Redis:
+
+docker exec -it axon-redis redis-cli
+Try some Redis commands to verify connectivity.
+
+Step 5: Application-Specific Testing
+Once the infrastructure is verified, you can test your specific application endpoints. Based on your implementation, you might have endpoints like:
+
+# Example user creation (adjust based on your actual API)
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -H "X-Correlation-ID: test-user-creation" \
+  -d '{"name": "John Doe", "email": "john@example.com"}'
+
+# Example user query
+curl -H "X-Correlation-ID: test-user-query" \
+  http://localhost:8080/api/users
+Monitoring During Testing
+Watch the application logs to see correlation IDs and health check activity:
+
+# In separate terminals, watch the logs
+tail -f custom-axon-server/target/logs/application.log
+tail -f main-application/target/logs/application.log
+Cleanup
+When you're done testing:
+
+# Stop applications (Ctrl+C in their terminals)
+# Stop infrastructure
+docker-compose down
+
+# To also remove volumes (careful - this deletes data!)
+docker-compose down -v
+Your setup is now ready for comprehensive end-to-end testing with full observability through health checks, metrics, and correlation ID tracing!
+
+Revert
+
+
+
+
+
+
+
+Claude Sonnet 4.0

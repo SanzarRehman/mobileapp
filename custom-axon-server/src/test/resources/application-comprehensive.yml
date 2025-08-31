@@ -1,0 +1,97 @@
+spring:
+  profiles:
+    active: test
+  
+  # Database configuration for comprehensive tests
+  datasource:
+    url: jdbc:h2:mem:custom_server_testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false
+  
+  # Kafka configuration for tests
+  kafka:
+    bootstrap-servers: ${spring.embedded.kafka.brokers}
+    consumer:
+      group-id: custom-server-test-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  
+  # Redis configuration for tests
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+# Server configuration
+server:
+  port: 8081
+
+# Event store configuration
+event-store:
+  batch-size: 100
+  snapshot-threshold: 50
+  cleanup-interval: 3600000
+
+# Command routing configuration
+command-routing:
+  load-balancer: round-robin
+  health-check-interval: 30000
+  timeout: 5000
+
+# Query routing configuration
+query-routing:
+  timeout: 10000
+  max-concurrent-queries: 100
+
+# Logging configuration for tests
+logging:
+  level:
+    com.example: DEBUG
+    org.springframework.kafka: WARN
+    org.apache.kafka: WARN
+    org.hibernate: WARN
+    org.testcontainers: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# Management endpoints for testing
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: false
+
+# Test-specific configurations
+test:
+  performance:
+    event-store-timeout: 30s
+    routing-timeout: 10s
+  contract:
+    api-version: v1
+    strict-validation: true

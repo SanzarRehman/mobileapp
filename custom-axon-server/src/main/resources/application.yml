@@ -1,0 +1,151 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: custom-axon-server
+  pulsar:
+    admin:
+      service-url: http://127.0.0.1:8080
+    client:
+      service-url: pulsar://127.0.0.1:6650
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/axon_server
+    username: axon_user
+    password: axon_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      jdbc-url: jdbc:postgresql://localhost:5432/axon_server
+      username: axon_user
+      password: axon_password
+      driver-class-name: org.postgresql.Driver
+      pool-name: CustomAxonServerCP
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      auto-commit: false  # Ensure Spring/Hibernate control transactions
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        connection:
+          provider_disables_autocommit: true  # Recommended by Hibernate to avoid changing auto-commit
+  
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: custom-axon-server
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 1
+
+# gRPC Server Configuration
+grpc:
+  server:
+    port: 9060
+    enable-reflection: true
+    max-inbound-message-size: 4MB
+    max-inbound-metadata-size: 8KB
+    keep-alive-time: 30s
+    keep-alive-timeout: 5s
+    keep-alive-without-calls: false
+    max-connection-idle: 60s
+    max-connection-age: 30s
+    max-connection-age-grace: 5s
+    permit-keep-alive-time: 5s
+    permit-keep-alive-without-calls: false
+    security:
+      enabled: false  # Will be enabled later with proper certificates
+      certificate-chain: classpath:certificates/server.crt
+      private-key: classpath:certificates/server.key
+      trust-cert-collection: classpath:certificates/ca.crt
+
+# Kafka topic configuration
+kafka:
+  topics:
+    events: axon-events
+    commands: axon-commands
+    snapshots: axon-snapshots
+    partitions: 3
+    replication-factor: 1
+
+# Axon snapshot configuration
+axon:
+  snapshot:
+    threshold: 100
+    retention:
+      days: 30
+    cleanup:
+      enabled: true
+
+# Service Discovery Configuration
+service:
+  discovery:
+    cleanup-interval: 60s
+    health-check-timeout: 30s
+    registration-ttl: 300s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        grpc.server.calls: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+        grpc.server.calls: 0.5, 0.95, 0.99
+      sla:
+        http.server.requests: 10ms, 50ms, 100ms, 200ms, 500ms
+        grpc.server.calls: 10ms, 50ms, 100ms, 200ms, 500ms
+
+logging:
+  level:
+    com.example: DEBUG
+    org.springframework.kafka: INFO
+    net.devh.boot.grpc: DEBUG
+    io.grpc: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+# Keycloak Configuration
+keycloak:
+  auth-server-url: http://localhost:8180/auth
+  realm: axon-realm
+  resource: custom-axon-server
+  credentials:
+    secret: ${KEYCLOAK_CLIENT_SECRET:your-server-secret}
+  use-resource-role-mappings: true
+  bearer-only: true

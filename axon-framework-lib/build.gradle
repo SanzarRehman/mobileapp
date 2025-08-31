@@ -1,0 +1,118 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'org.springframework.boot' version '3.3.2' apply false
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.example'
+version = '1.0.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+    withJavadocJar()
+}
+
+dependencyManagement {
+    imports {
+        mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+    }
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+ext {
+    grpcVersion = '1.58.0'
+    protobufVersion = '3.24.4'
+    axonVersion = '4.12.1'
+}
+
+dependencies {
+    // Core library dependencies - will be provided by consuming applications
+    api 'org.springframework.boot:spring-boot-starter'
+    api 'org.springframework.boot:spring-boot-starter-data-jpa'
+    api 'org.springframework.boot:spring-boot-starter-data-redis'
+    api 'org.springframework.boot:spring-boot-starter-web'
+    api 'org.springframework.boot:spring-boot-starter-validation'
+    api 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // Spring Boot Configuration Processor for auto-configuration metadata
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    // Axon Framework
+    api "org.axonframework:axon-spring-boot-starter:${axonVersion}"
+    api "org.axonframework:axon-messaging:${axonVersion}"
+    api "org.axonframework:axon-eventsourcing:${axonVersion}"
+    api "org.axonframework:axon-configuration:${axonVersion}"
+    api "org.axonframework:axon-test:${axonVersion}"
+
+    // gRPC Dependencies
+    api "io.grpc:grpc-netty-shaded:${grpcVersion}"
+    api "io.grpc:grpc-protobuf:${grpcVersion}"
+    api "io.grpc:grpc-stub:${grpcVersion}"
+    api "io.grpc:grpc-services:${grpcVersion}"
+    api "com.google.protobuf:protobuf-java:${protobufVersion}"
+
+    // Spring Boot gRPC - Updated for Spring Boot 3+ compatibility
+    api 'net.devh:grpc-spring-boot-starter:3.1.0.RELEASE'
+    api 'net.devh:grpc-client-spring-boot-starter:3.1.0.RELEASE'
+
+    // gRPC Common Library
+    api 'com.example:grpc-common:1.0.0-SNAPSHOT'
+
+    // Security and JWT
+    api 'org.springframework.boot:spring-boot-starter-security'
+    api 'io.jsonwebtoken:jjwt-api:0.11.5'
+    api 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    api 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    // Apache Pulsar
+    api 'org.apache.pulsar:pulsar-client:3.0.2'
+
+    // Circuit Breaker and Resilience
+    api 'io.github.resilience4j:resilience4j-spring-boot3:2.1.0'
+    api 'io.github.resilience4j:resilience4j-circuitbreaker:2.1.0'
+    api 'io.github.resilience4j:resilience4j-retry:2.1.0'
+
+    // Metrics and Monitoring
+    api 'io.micrometer:micrometer-registry-prometheus'
+
+    // Jackson for JSON processing
+    api 'com.fasterxml.jackson.core:jackson-databind'
+    api 'com.fasterxml.jackson.core:jackson-core'
+    api 'com.fasterxml.jackson.core:jackson-annotations'
+
+    // Test dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+
+            pom {
+                name = 'Axon Framework Library'
+                description = 'A comprehensive Axon Framework library for Spring Boot applications'
+
+                developers {
+                    developer {
+                        id = 'developer'
+                        name = 'Developer'
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,193 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: main-application
+  
+  datasource:
+    url: jdbc:postgresql://localhost:5432/axon_main
+    username: axon_user
+    password: axon_password
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      jdbc-url: jdbc:postgresql://localhost:5432/axon_main
+      username: axon_user
+      password: axon_password
+      driver-class-name: org.postgresql.Driver
+      pool-name: MainApplicationCP
+      maximum-pool-size: 15
+      minimum-idle: 3
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      # Fix transaction management for Axon EventProcessors
+      auto-commit: false
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        # Ensure proper transaction management
+        connection.autocommit: false
+        current_session_context_class: org.springframework.orm.hibernate5.SpringSessionContext
+    # Force JPA transaction management
+    open-in-view: false
+  
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    # Allow out-of-order migrations to fix the V3 migration gap
+    out-of-order: true
+    validate-on-migrate: false
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: main-application
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+
+# gRPC Client Configuration
+grpc:
+  server:
+    port: 8083
+    enable-reflection: true
+    max-inbound-message-size: 4MB
+    max-inbound-metadata-size: 8KB
+    keep-alive-time: 30s
+    keep-alive-timeout: 5s
+    keep-alive-without-calls: false
+    max-connection-idle: 60s
+    max-connection-age: 30s
+    max-connection-age-grace: 5s
+    permit-keep-alive-time: 5s
+    permit-keep-alive-without-calls: false
+    security:
+      enabled: false  # Will be enabled later with proper certificates
+      certificate-chain: classpath:certificates/server.crt
+      private-key: classpath:certificates/server.key
+      trust-cert-collection: classpath:certificates/ca.crt
+  client:
+    custom-axon-server:
+      address: static://localhost:9060
+      negotiation-type: plaintext
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+      keep-alive-without-calls: true
+      max-inbound-message-size: 4MB
+      max-inbound-metadata-size: 8KB
+      user-agent: main-application/1.0.0
+      # Connection management
+      deadline: 60s
+      # Retry configuration
+      retry-enabled: true
+      max-retry-attempts: 3
+      # Security (disabled for now)
+      security:
+        authority-override: localhost
+        trust-cert-collection: classpath:certificates/ca.crt
+        client-auth-enabled: false
+
+axon:
+  axonserver:
+    enabled: false
+
+  # Configure event serialization
+  serializer:
+    general: jackson
+    events: jackson
+    messages: jackson
+  
+  eventhandling:
+    processors:
+      my-subscribing-group:
+        mode: subscribing
+
+# Service Discovery Configuration
+service:
+  discovery:
+    auto-register: true
+    heartbeat-interval: 30s
+    health-check-interval: 60s
+    retry-interval: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        grpc.client.calls: true
+      percentiles:
+        http.server.requests: 0.5, 0.95, 0.99
+        grpc.client.calls: 0.5, 0.95, 0.99
+      sla:
+        http.server.requests: 10ms, 50ms, 100ms, 200ms, 500ms
+        grpc.client.calls: 10ms, 50ms, 100ms, 200ms, 500ms
+
+logging:
+  level:
+    com.example: DEBUG
+    org.axonframework: INFO
+    org.springframework.kafka: INFO
+    net.devh.boot.grpc: DEBUG
+    io.grpc: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+app:
+  custom-server:
+    url: http://localhost:8081
+    grpc:
+      host: localhost
+      port: 9060
+
+custom:
+  axon:
+    server:
+      url: http://localhost:8081
+
+# Keycloak Configuration
+keycloak:
+  auth-server-url: http://localhost:8180/auth
+  realm: axon-realm
+  resource: main-application
+  credentials:
+    secret: ${KEYCLOAK_CLIENT_SECRET:your-client-secret}
+  use-resource-role-mappings: true
+  bearer-only: true
+

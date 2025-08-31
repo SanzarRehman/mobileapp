@@ -1,0 +1,59 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.example'
+version = '1.0.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+}
+
+ext {
+    grpcVersion = '1.58.0'
+    protobufVersion = '3.24.4'
+    axonVersion = '4.12.1'
+    testcontainersVersion = '1.19.3'
+}
+
+dependencies {
+
+
+    // Shared gRPC Common Library - using Maven local repository
+    implementation 'com.example:grpc-common:1.0.0-SNAPSHOT'
+    implementation 'com.example:axon-framework-lib:1.0.0-SNAPSHOT'
+    // Database - only what's specific to this application
+    runtimeOnly 'org.postgresql:postgresql:42.7.1'
+    implementation 'org.flywaydb:flyway-core'
+
+    // Application-specific dependencies
+    implementation 'org.springframework.boot:spring-boot-starter-pulsar'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.keycloak:keycloak-spring-boot-starter:21.1.2'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "org.axonframework:axon-test:${axonVersion}"
+    testImplementation 'com.h2database:h2'
+    testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
+    testImplementation "org.testcontainers:postgresql:${testcontainersVersion}"
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation "org.testcontainers:toxiproxy:${testcontainersVersion}"
+    testImplementation 'eu.rekawek.toxiproxy:toxiproxy-java:2.1.7'
+    testImplementation 'org.junit.platform:junit-platform-suite'
+    testImplementation 'org.awaitility:awaitility'
+    testImplementation "io.grpc:grpc-testing:${grpcVersion}"
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+

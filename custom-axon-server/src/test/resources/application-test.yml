@@ -1,0 +1,102 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: custom-axon-server-test
+  
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+    hikari:
+      jdbc-url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+      username: sa
+      password: 
+      driver-class-name: org.h2.Driver
+      pool-name: TestCP
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      auto-commit: false  # Ensure transactional commits are managed by Spring/Hibernate
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        connection:
+          provider_disables_autocommit: true
+  
+  flyway:
+    enabled: false
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: custom-axon-server-test
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 2
+
+kafka:
+  topics:
+    events: test-axon-events
+    commands: test-axon-commands
+    snapshots: test-axon-snapshots
+    partitions: 1
+    replication-factor: 1
+
+axon:
+  snapshot:
+    threshold: 10
+    retention:
+      days: 1
+    cleanup:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+logging:
+  level:
+    com.example: DEBUG
+    org.springframework.kafka: WARN
+    org.springframework.web: WARN
+    org.springframework.boot.autoconfigure: WARN
+    org.hibernate: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+
+# Keycloak Configuration for testing
+keycloak:
+  auth-server-url: http://localhost:8180/auth
+  realm: axon-realm-test
+  resource: custom-axon-server-test
+  credentials:
+    secret: test-server-secret
+  use-resource-role-mappings: true
+  bearer-only: true
