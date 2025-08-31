@@ -97,20 +97,20 @@ HA variant (multi-instance server with Redis-backed registry)
 ```mermaid
 flowchart TB
   subgraph Apps[Spring Boot Apps]
-    A1[Main App + SDK<br/>@Command/@Query/@Event]
-    A2[App #2 + SDK<br/>@Command/@Query/@Event]
-    A3[App #N + SDK<br/>@Command/@Query/@Event]
+    A1[Main App + SDK - Command/Query/Event]
+    A2[App #2 + SDK - Command/Query/Event]
+    A3[App #N + SDK - Command/Query/Event]
   end
 
-  subgraph Server[Custom Axon Server (N instances)]
-    REG[Registration & Registry<br/>(in-memory)]
-    ROUTE[Router<br/>(consistent hash per aggregate)]
-    STORE[Event Store<br/>(replay, snapshot)]
-    PUB[Pulsar Publisher<br/>(topic per event type)]
+  subgraph Server[Custom Axon Server - N instances]
+    REG[Registration and Registry - in memory]
+    ROUTE[Router - consistent hash per aggregate]
+    STORE[Event Store - replay and snapshots]
+    PUB[Pulsar Publisher - topic per event type]
   end
 
-  REDIS[(Redis<br/>Membership store)]
-  PUL[Pulsar<br/>Event topics by type]
+  REDIS[(Redis membership store)]
+  PUL[Pulsar event topics by type]
 
   A1 -->|gRPC: register + heartbeat| REG
   A2 -->|gRPC: register + heartbeat| REG

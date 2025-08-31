@@ -95,40 +95,40 @@ HA variant (multi-instance server with Redis-backed registry)
 ## System Architecture (Mermaid)
 
 ```mermaid
+%%{init: { 'flowchart': { 'defaultRenderer': 'elk' } }}%%
 flowchart TB
-  subgraph Apps[Spring Boot Apps]
-    A1[Main App + SDK<br/>@Command/@Query/@Event]
-    A2[App #2 + SDK<br/>@Command/@Query/@Event]
-    A3[App #N + SDK<br/>@Command/@Query/@Event]
+  subgraph Apps["Spring Boot Apps"]
+    A1["Main App + SDK @Command/@Query/@Event"]
+    A2["App #2 + SDK @Command/@Query/@Event"]
+    A3["App #N + SDK @Command/@Query/@Event"]
   end
 
-  subgraph Server[Custom Axon Server (N instances)]
-    REG[Registration & Registry<br/>(in-memory)]
-    ROUTE[Router<br/>(consistent hash per aggregate)]
-    STORE[Event Store<br/>(replay, snapshot)]
-    PUB[Pulsar Publisher<br/>(topic per event type)]
+  subgraph Server["Custom Axon Server N instances"]
+    REG["Registration & Registry in-memory"]
+    ROUTE["Router consistent hash per aggregate"]
+    EVENTREGISTER["CREATE DYNAMIC TOPIC AND SUBSCRIBE"]
+    STORE["Event Store replay snapshot"]
+    PUB["Pulsar Publisher topic per event type"]
   end
 
-  REDIS[(Redis<br/>Membership store)]
-  PUL[Pulsar<br/>Event topics by type]
+  A1 -- gRPC: register + heartbeat --> REG
+  A2 -- gRPC: register + heartbeat --> REG
+  A3 -- gRPC: register + heartbeat --> REG
 
-  A1 -->|gRPC: register + heartbeat| REG
-  A2 -->|gRPC: register + heartbeat| REG
-  A3 -->|gRPC: register + heartbeat| REG
+  REG <--> REDIS[("Redis Membership store")]
 
-  REG <--> REDIS
+  A1 -- gRPC: cmd/query --> ROUTE
+  A1 -- gRPC: event --> EVENTREGISTER
+  A2 -- gRPC: cmd/query --> ROUTE
+  A2 -- gRPC: event --> EVENTREGISTER
+  A3 -- gRPC: cmd/query --> ROUTE
+  A3 -- gRPC: event --> EVENTREGISTER
 
-  A1 -->|gRPC: cmd/query| ROUTE
-  A2 -->|gRPC: cmd/query| ROUTE
-  A3 -->|gRPC: cmd/query| ROUTE
-
-  ROUTE --> STORE
+  EVENTREGISTER --> STORE
   STORE --> PUB
-  PUB --> PUL
+  PUB --> PUL["Pulsar Event topics by type"]
 
-  PUL --> A1
-  PUL --> A2
-  PUL --> A3
+  PUL --> A1 & A2 & A3
 ```
 
 ---
