@@ -1,665 +1,306 @@
-# Custom Axon Server Architecture Documentation
+# Custom Axon Platform Architecture (gRPC + SDK + Pulsar)
 
 ## Overview
+- One central component: Custom Axon Server (also the Event Store).
+- Unlimited Spring Boot applications (including your Main App) use our SDK/library.
+- The SDK auto-discovers @CommandHandler, @EventHandler, and @QueryHandler and registers them with the server via gRPC.
+- Health is reported continuously via a gRPC streaming pulse.
+- Commands and queries travel over gRPC to the server, which routes them to the correct app instance.
+- Events are persisted by the server and fanned out via Apache Pulsar, with one topic per event type; the SDK auto-subscribes by type.
+- Consistent hashing on aggregate identifier keeps all commands for the same aggregate on the same app instance.
+- Redis-backed registry: the server persists instance/handler membership in Redis, enabling multi-instance server deployment and fast failover.
 
-This document provides a comprehensive visual guide to the Custom Axon Server implementation, showing how it replaces the standard Axon Server with a custom solution built on Spring Boot, PostgreSQL, Kafka, and Redis.
+Why it’s fast
+- gRPC for low-latency, binary, multiplexed transport.
+- In-memory routing with Redis-backed membership; consistent-hash routing minimizes cross-node chatter and rebalancing.
+- Streaming heartbeats for instant liveness and backpressure.
+- Apache Pulsar for high-throughput, per-type fanout.
+- Single authoritative event store enabling efficient replay and snapshots.
 
-## System Architecture
+---
+
+## High-level diagram (ASCII)
+
+```
++-------------------+         gRPC          +-----------------------+
+|  Client(s)/APIs   | --------------------> |  Spring Boot App #1  |
++-------------------+                       |  + Our SDK           |
+                                            |  - @CommandHandler   |
+                                            |  - @QueryHandler     |
+                                            |  - @EventHandler     |
+                                            +-----------^----------+
+                                                        | register &
+                                                        | heartbeat (gRPC stream)
+                                                        |
++-------------------+         gRPC          +-----------+----------+
+|  Spring Boot App  | --------------------> |   Custom Axon Server |
+|  (Main App)       | <-------------------- |   (Router + Store)   |
+|  + Our SDK        |   route cmd/query     +-----------+----------+
++---------^---------+                                     |
+          | auto-subscribe (by event type)                | persist + publish
+          |                                               v
+          |                                     +---------+---------+
+          |                                     |   Apache Pulsar   |
+          +-------------------------------------+  topics per type  |
+                                                +-------------------+
+
+```
+
+HA variant (multi-instance server with Redis-backed registry)
+```
+                +-------------------+
+                |  Load Balancer    |
+                +---------+---------+
+                          |
+      +-------------------+-------------------+
+      |                                       |
++-----v------+                         +------v-----+
+| Custom     |   gRPC + shared Redis   | Custom     |
+| Axon Srv A | <---------------------> | Axon Srv B |
++-----+------+                         +------+-----+
+      |  persist + publish                    |
+      v                                       v
++-----+-------------------+    +--------------+----+
+|  Event Store (shared)   |    | Apache Pulsar     |
++-------------------------+    +-------------------+
+```
+
+---
+
+## Components
+- Custom Axon Server
+  - gRPC endpoints for registration, command, query, and health streams.
+  - Maintains an in-memory registry of applications, handlers, and health; persists membership to Redis for HA.
+  - Routing engine using consistent hashing on aggregate identifier for command stickiness.
+  - Event Store (pluggable storage) with replay and snapshots.
+  - Publishes events to Pulsar using one topic per event type.
+
+- Registry store (Redis)
+  - Stores membership: apps, instances, handlers, liveness timestamps.
+  - Enables multi-instance server deployment and fast failover.
+
+- SDK/Library (used by Main App and any other Spring Boot app)
+  - Scans classpath for @CommandHandler, @QueryHandler, and @EventHandler.
+  - Registers handlers over gRPC at app startup; renews/refreshes on change.
+  - Maintains a gRPC streaming heartbeat to the server.
+  - Sends commands/queries via gRPC to the server.
+  - Auto-subscribes to Pulsar topics (by event type) and dispatches to handlers.
+
+- Applications (Main App and unlimited others)
+  - Only need to define handlers and domain objects.
+  - No custom wiring for transport/routing; the SDK does it.
+
+---
+
+## System Architecture (Mermaid)
 
 ```mermaid
-graph TB
-    subgraph "Client Layer"
-        Client[Client Application]
-        WebUI[Web UI]
-    end
+flowchart TB
+  subgraph Apps[Spring Boot Apps]
+    A1[Main App + SDK]\n@Command/@Query/@Event
+    A2[App #2 + SDK]\n@Command/@Query/@Event
+    A3[App #N + SDK]\n@Command/@Query/@Event
+  end
 
-    subgraph "Main Application (Port 8080)"
-        MainApp[Main Spring Boot App]
-        CommandGW[Command Gateway]
-        QueryGW[Query Gateway]
-        EventHandler[Event Handlers]
-        QueryHandler[Query Handlers]
-        Projections[Read Model Projections]
-        KafkaListener[Kafka Event Listener]
-        HealthChecks1[Health Indicators]
-        Metrics1[Metrics Collection]
-        CorrelationFilter1[Correlation ID Filter]
-    end
+  subgraph Server[Custom Axon Server (N instances)]
+    REG[Registration & Registry]\n(in-memory)
+    ROUTE[Router\n(consistent hash per aggregate)]
+    STORE[Event Store\n(replay, snapshot)]
+    PUB[Pulsar Publisher\n(topic per event type)]
+  end
 
-    subgraph "Custom Axon Server (Port 8081)"
-        CustomServer[Custom Axon Server]
-        CommandController[Command Controller]
-        QueryController[Query Controller]
-        EventController[Event Controller]
-        CommandRouting[Command Routing Service]
-        QueryRouting[Query Routing Service]
-        EventStore[Event Store Service]
-        SnapshotService[Snapshot Service]
-        KafkaPublisher[Kafka Event Publisher]
-        HealthChecks2[Health Indicators]
-        Metrics2[Metrics Collection]
-        CorrelationFilter2[Correlation ID Filter]
-    end
+  REDIS[(Redis\nMembership store)]
+  PUL[Pulsar\nEvent topics by type]
 
-    subgraph "Infrastructure Layer"
-        PostgresMain[(PostgreSQL - Main DB)]
-        PostgresServer[(PostgreSQL - Server DB)]
-        Redis[(Redis Cache)]
-        Kafka[Kafka Broker]
-        Prometheus[Prometheus]
-        Grafana[Grafana]
-    end
+  A1 <-- gRPC: register + heartbeat --> REG
+  A2 <-- gRPC: register + heartbeat --> REG
+  A3 <-- gRPC: register + heartbeat --> REG
 
-    subgraph "Monitoring & Observability"
-        KafkaUI[Kafka UI]
-        ActuatorMain[Actuator Endpoints]
-        ActuatorServer[Actuator Endpoints]
-    end
+  REG <--> REDIS
 
-    %% Client connections
-    Client --> MainApp
-    WebUI --> MainApp
+  A1 -- gRPC: cmd/query --> ROUTE
+  A2 -- gRPC: cmd/query --> ROUTE
+  A3 -- gRPC: cmd/query --> ROUTE
 
-    %% Main App internal flow
-    MainApp --> CommandGW
-    MainApp --> QueryGW
-    CommandGW --> CustomServer
-    QueryGW --> CustomServer
-    KafkaListener --> EventHandler
-    EventHandler --> Projections
-    QueryHandler --> PostgresMain
+  ROUTE --> STORE
+  STORE --> PUB
+  PUB --> PUL
 
-    %% Custom Server internal flow
-    CustomServer --> CommandController
-    CustomServer --> QueryController
-    CustomServer --> EventController
-    CommandController --> CommandRouting
-    QueryController --> QueryRouting
-    EventController --> EventStore
-    EventStore --> PostgresServer
-    EventStore --> KafkaPublisher
-    SnapshotService --> Redis
-    KafkaPublisher --> Kafka
-
-    %% Infrastructure connections
-    Kafka --> KafkaListener
-    MainApp --> PostgresMain
-    CustomServer --> PostgresServer
-    CustomServer --> Redis
-    
-    %% Monitoring connections
-    MainApp --> ActuatorMain
-    CustomServer --> ActuatorServer
-    ActuatorMain --> Prometheus
-    ActuatorServer --> Prometheus
-    Prometheus --> Grafana
-    Kafka --> KafkaUI
-
-    %% Health checks
-    HealthChecks1 --> PostgresMain
-    HealthChecks1 --> Kafka
-    HealthChecks1 --> CustomServer
-    HealthChecks2 --> PostgresServer
-    HealthChecks2 --> Redis
-    HealthChecks2 --> Kafka
-
-    %% Styling
-    classDef appLayer fill:#e1f5fe
-    classDef serverLayer fill:#f3e5f5
-    classDef infraLayer fill:#e8f5e8
-    classDef monitorLayer fill:#fff3e0
-
-    class MainApp,CommandGW,QueryGW,EventHandler,QueryHandler,Projections,KafkaListener appLayer
-    class CustomServer,CommandController,QueryController,EventController,CommandRouting,QueryRouting,EventStore,SnapshotService,KafkaPublisher serverLayer
-    class PostgresMain,PostgresServer,Redis,Kafka infraLayer
-    class Prometheus,Grafana,KafkaUI,ActuatorMain,ActuatorServer monitorLayer
+  PUL --> A1
+  PUL --> A2
+  PUL --> A3
 ```
 
-## Command Flow Pipeline
+---
 
-### 1. Command Processing Flow
+## Why faster and more developer-friendly than direct pub/sub
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant MainApp as Main Application
-    participant CustomServer as Custom Axon Server
-    participant CommandRouting as Command Routing
-    participant EventStore as Event Store
-    participant Kafka
-    participant EventHandler as Event Handler
-    participant Projection as Read Model
+Performance
+- Fewer hops for commands/queries: SDK -> Server router -> Owning instance (consistent hash), instead of ad-hoc broker fan-in/fan-out.
+- gRPC/Protobuf reduces serialization overhead vs JSON over HTTP; multiplexing over HTTP/2 improves throughput.
+- Streaming heartbeats give instant liveness detection and quick removal from routing, avoiding timeouts.
+- Consistent-hash routing pins aggregates to instances, minimizing cross-node contention and retries.
+- Pulsar per-event-type topics and server-side batching/compression reduce consumer lag.
 
-    Note over Client,Projection: Command Processing Pipeline
+Developer experience
+- No manual topic naming, subscriptions, or handler registration—SDK auto-discovers and registers handlers.
+- One API for commands/queries/events; uniform error handling, retries, timeouts, and backpressure built-in.
+- Auto-subscription by event type; no boilerplate consumers.
+- Centralized event store gives built-in replay/snapshot; no custom re-ingestion scripts.
+- Better observability via unified registry, metrics, and tracing through the server.
 
-    Client->>+MainApp: 1. HTTP Request with Command
-    Note right of MainApp: Correlation ID Filter adds/extracts correlation ID
-    MainApp->>MainApp: 2. Command Validation & Logging
-    MainApp->>+CustomServer: 3. Route Command via HTTP
-    Note right of CustomServer: Metrics: command_processed_counter++
-    CustomServer->>+CommandRouting: 4. Find Target Instance
-    CommandRouting-->>-CustomServer: 5. Target Instance ID
-    CustomServer->>+EventStore: 6. Process Command
-    EventStore->>EventStore: 7. Generate Events
-    EventStore->>EventStore: 8. Store Events in PostgreSQL
-    EventStore->>+Kafka: 9. Publish Events
-    Kafka-->>-EventStore: 10. Ack
-    EventStore-->>-CustomServer: 11. Command Result
-    CustomServer-->>-MainApp: 12. Command Response
-    MainApp-->>-Client: 13. HTTP Response
+Operational simplicity
+- Redis-backed membership allows multi-instance servers and fast failover without bespoke coordination.
+- Consistent-hash ring rebalances minimally when membership changes.
+- Clear boundaries: commands/queries over gRPC; events over Pulsar; storage in the server.
 
-    Note over Kafka,Projection: Asynchronous Event Processing
-    Kafka->>+EventHandler: 14. Event Notification
-    EventHandler->>EventHandler: 15. Process Event
-    EventHandler->>+Projection: 16. Update Read Model
-    Projection-->>-EventHandler: 17. Update Complete
-    EventHandler-->>-Kafka: 18. Ack
-```
+---
 
-### 2. Query Processing Flow
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant MainApp as Main Application
-    participant CustomServer as Custom Axon Server
-    participant QueryRouting as Query Routing
-    participant QueryHandler as Query Handler
-    participant ReadModel as Read Model DB
-
-    Note over Client,ReadModel: Query Processing Pipeline
-
-    Client->>+MainApp: 1. HTTP Request with Query
-    Note right of MainApp: Correlation ID Filter adds/extracts correlation ID
-    MainApp->>+CustomServer: 2. Route Query via HTTP
-    Note right of CustomServer: Metrics: query_processed_counter++
-    CustomServer->>+QueryRouting: 3. Find Query Handler
-    QueryRouting-->>-CustomServer: 4. Handler Instance ID
-    CustomServer->>+QueryHandler: 5. Execute Query
-    QueryHandler->>+ReadModel: 6. Fetch Data
-    ReadModel-->>-QueryHandler: 7. Query Results
-    QueryHandler-->>-CustomServer: 8. Query Response
-    CustomServer-->>-MainApp: 9. Query Results
-    MainApp-->>-Client: 10. HTTP Response with Data
-```
-
-## Core Features Deep Dive
-
-### 1. Command Routing System
-
-```mermaid
-graph LR
-    subgraph "Command Routing Architecture"
-        CommandMsg[Command Message]
-        Router[Command Router]
-        Registry[Instance Registry]
-        LoadBalancer[Load Balancer]
-        HealthCheck[Health Monitor]
-        
-        CommandMsg --> Router
-        Router --> Registry
-        Router --> LoadBalancer
-        Router --> HealthCheck
-        
-        subgraph "Target Instances"
-            Instance1[Instance 1]
-            Instance2[Instance 2]
-            Instance3[Instance 3]
-        end
-        
-        LoadBalancer --> Instance1
-        LoadBalancer --> Instance2
-        LoadBalancer --> Instance3
-    end
-```
-
-**Key Features:**
-- **Dynamic Registration**: Instances register their command handlers
-- **Load Balancing**: Distributes commands across healthy instances
-- **Health Monitoring**: Tracks instance health and removes unhealthy ones
-- **Aggregate Routing**: Routes commands to the instance owning the aggregate
-
-### 2. Event Store Implementation
-
-```mermaid
-graph TB
-    subgraph "Event Store Architecture"
-        EventIn[Incoming Event]
-        Validator[Event Validator]
-        Serializer[Event Serializer]
-        Storage[PostgreSQL Storage]
-        Indexer[Event Indexer]
-        Publisher[Kafka Publisher]
-        Snapshot[Snapshot Service]
-        
-        EventIn --> Validator
-        Validator --> Serializer
-        Serializer --> Storage
-        Serializer --> Indexer
-        Serializer --> Publisher
-        Storage --> Snapshot
-        
-        subgraph "Storage Schema"
-            EventTable[events table]
-            SnapshotTable[snapshots table]
-            IndexTable[event_index table]
-        end
-        
-        Storage --> EventTable
-        Snapshot --> SnapshotTable
-        Indexer --> IndexTable
-    end
-```
-
-**Database Schema:**
-```sql
--- Events table
-CREATE TABLE events (
-    id BIGSERIAL PRIMARY KEY,
-    aggregate_id VARCHAR(255) NOT NULL,
-    aggregate_type VARCHAR(255) NOT NULL,
-    event_type VARCHAR(255) NOT NULL,
-    event_data JSONB NOT NULL,
-    metadata JSONB,
-    sequence_number BIGINT NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(aggregate_id, sequence_number)
-);
-
--- Snapshots table
-CREATE TABLE snapshots (
-    id BIGSERIAL PRIMARY KEY,
-    aggregate_id VARCHAR(255) NOT NULL,
-    aggregate_type VARCHAR(255) NOT NULL,
-    sequence_number BIGINT NOT NULL,
-    snapshot_data JSONB NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(aggregate_id)
-);
-```
-
-### 3. Snapshot Management
-
-```mermaid
-graph LR
-    subgraph "Snapshot Lifecycle"
-        EventStream[Event Stream]
-        Threshold[Threshold Check]
-        Creator[Snapshot Creator]
-        Storage[Redis Storage]
-        Cleanup[Cleanup Service]
-        
-        EventStream --> Threshold
-        Threshold -->|Every 100 events| Creator
-        Creator --> Storage
-        Storage --> Cleanup
-        
-        subgraph "Snapshot Strategy"
-            Frequency[Every N Events]
-            Retention[30 Day Retention]
-            Compression[Data Compression]
-        end
-        
-        Creator --> Frequency
-        Storage --> Retention
-        Storage --> Compression
-    end
-```
-
-### 4. Health Monitoring System
-
-```mermaid
-graph TB
-    subgraph "Health Monitoring Architecture"
-        HealthEndpoint[/actuator/health]
-        HealthAggregator[Health Aggregator]
-        
-        subgraph "Health Indicators"
-            DBHealth[Database Health]
-            KafkaHealth[Kafka Health]
-            RedisHealth[Redis Health]
-            CustomHealth[Custom Server Health]
-        end
-        
-        subgraph "Health Checks"
-            DBCheck[SELECT 1 Query]
-            KafkaCheck[Cluster Info Check]
-            RedisCheck[PING Command]
-            HTTPCheck[HTTP Health Check]
-        end
-        
-        HealthEndpoint --> HealthAggregator
-        HealthAggregator --> DBHealth
-        HealthAggregator --> KafkaHealth
-        HealthAggregator --> RedisHealth
-        HealthAggregator --> CustomHealth
-        
-        DBHealth --> DBCheck
-        KafkaHealth --> KafkaCheck
-        RedisHealth --> RedisCheck
-        CustomHealth --> HTTPCheck
-    end
-```
-
-### 5. Metrics Collection System
-
-```mermaid
-graph TB
-    subgraph "Metrics Architecture"
-        Request[HTTP Request]
-        Filter[Metrics Filter]
-        Counters[Counters]
-        Timers[Timers]
-        Gauges[Gauges]
-        Registry[Micrometer Registry]
-        Prometheus[Prometheus Endpoint]
-        
-        Request --> Filter
-        Filter --> Counters
-        Filter --> Timers
-        Filter --> Gauges
-        Counters --> Registry
-        Timers --> Registry
-        Gauges --> Registry
-        Registry --> Prometheus
-        
-        subgraph "Custom Metrics"
-            CommandMetrics[Commands Processed]
-            QueryMetrics[Queries Processed]
-            EventMetrics[Events Stored]
-            TimingMetrics[Processing Times]
-        end
-        
-        Registry --> CommandMetrics
-        Registry --> QueryMetrics
-        Registry --> EventMetrics
-        Registry --> TimingMetrics
-    end
-```
-
-## Data Flow Examples
-
-### Example 1: User Registration Command
+## Lifecycle: Registration and Health
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant WebApp as Web Application
-    participant MainApp as Main Application
-    participant CustomServer as Custom Axon Server
-    participant EventStore
-    participant Kafka
-    participant EventHandler
-    participant UserProjection
+  participant App as App + SDK
+  participant S as Custom Axon Server
+  participant R as Redis
 
-    User->>+WebApp: Register User Form
-    WebApp->>+MainApp: POST /api/users (CreateUserCommand)
-    Note right of MainApp: Correlation-ID: user-reg-123
-    MainApp->>MainApp: Validate Command
-    MainApp->>+CustomServer: Route Command
-    CustomServer->>CustomServer: Find User Aggregate Handler
-    CustomServer->>+EventStore: Process CreateUserCommand
-    EventStore->>EventStore: Generate UserCreatedEvent
-    EventStore->>EventStore: Store Event (seq: 1)
-    EventStore->>+Kafka: Publish UserCreatedEvent
-    Kafka-->>-EventStore: Ack
-    EventStore-->>-CustomServer: Command Success
-    CustomServer-->>-MainApp: User Created Response
-    MainApp-->>-WebApp: HTTP 201 Created
-    WebApp-->>-User: Registration Success
-
-    Note over Kafka,UserProjection: Async Event Processing
-    Kafka->>+EventHandler: UserCreatedEvent
-    EventHandler->>+UserProjection: Update User Read Model
-    UserProjection->>UserProjection: INSERT INTO users_view
-    UserProjection-->>-EventHandler: Update Complete
-    EventHandler-->>-Kafka: Ack
+  App->>S: Register(handlers: cmds, queries, events)
+  S->>R: Persist membership (app, instances, handlers)
+  S-->>App: Ack + Routing keys
+  App->>S: Heartbeat(stream): status, load, capabilities
+  S->>R: Update liveness timestamp
+  Note over App,S: Streaming heartbeat maintains instant liveness and backpressure
 ```
 
-### Example 2: User Query Request
+---
+
+## Command flow
+- SDK sends command to the server via gRPC.
+- Server computes consistent-hash shard from aggregate identifier to pick the target app instance that owns the aggregate.
+- Server forwards command via gRPC; the app executes the handler.
+- Resulting events are returned to the server for storage.
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant WebApp as Web Application
-    participant MainApp as Main Application
-    participant QueryHandler
-    participant ReadModelDB as Read Model DB
+  participant C as Client
+  participant A as App + SDK
+  participant S as Server (Router+Store)
 
-    User->>+WebApp: View User Profile
-    WebApp->>+MainApp: GET /api/users/123
-    Note right of MainApp: Correlation-ID: user-query-456
-    MainApp->>MainApp: Create FindUserByIdQuery
-    MainApp->>+QueryHandler: Execute Query
-    QueryHandler->>+ReadModelDB: SELECT * FROM users_view WHERE id = 123
-    ReadModelDB-->>-QueryHandler: User Data
-    QueryHandler-->>-MainApp: User DTO
-    MainApp-->>-WebApp: HTTP 200 OK + User Data
-    WebApp-->>-User: Display User Profile
+  C->>A: HTTP/GraphQL/GRPC API issues Command
+  A->>S: gRPC Command(cmd, aggregateId)
+  S->>S: Consistent hash(aggregateId) -> target instance
+  S->>A: gRPC Deliver to owning instance
+  A->>A: Handle command -> produce event(s)
+  A-->>S: Event(s)
+  S->>S: Persist events
+  S-->>A: Command result
+  A-->>C: Response
 ```
 
-## Monitoring and Observability
+---
 
-### 1. Correlation ID Tracing
+## Query flow
+- SDK sends query to the server via gRPC.
+- Server routes to the registered query handler instance.
+- Response streams back over gRPC.
 
 ```mermaid
-graph LR
-    subgraph "Request Tracing Flow"
-        Request[HTTP Request]
-        Filter[Correlation Filter]
-        MDC[Logging MDC]
-        Service[Service Layer]
-        Database[Database Call]
-        Response[HTTP Response]
-        
-        Request -->|X-Correlation-ID: abc-123| Filter
-        Filter -->|Set MDC| MDC
-        MDC --> Service
-        Service --> Database
-        Database --> Service
-        Service --> Response
-        Response -->|X-Correlation-ID: abc-123| Request
-        
-        subgraph "Log Entries"
-            Log1[INFO [abc-123] Processing command]
-            Log2[DEBUG [abc-123] Storing event]
-            Log3[INFO [abc-123] Command completed]
-        end
-        
-        MDC --> Log1
-        MDC --> Log2
-        MDC --> Log3
-    end
+sequenceDiagram
+  participant C as Client
+  participant A as App + SDK
+  participant S as Server
+
+  C->>A: Issue Query
+  A->>S: gRPC Query
+  S->>A: gRPC Route to handler instance
+  A-->>S: Query Result
+  S-->>A: Result
+  A-->>C: Response
 ```
 
-### 2. Metrics Dashboard Structure
+---
+
+## Event flow (store + fanout via Pulsar)
+- After command handling, app sends events to the server.
+- Server stores events (authoritative event store).
+- Server publishes to Pulsar on a topic named by event type.
+- SDK auto-subscribes to needed topics based on discovered @EventHandler types.
 
 ```mermaid
-graph TB
-    subgraph "Grafana Dashboards"
-        subgraph "Application Metrics"
-            CommandRate[Commands/sec]
-            QueryRate[Queries/sec]
-            EventRate[Events/sec]
-            ResponseTime[Response Times]
-        end
-        
-        subgraph "Infrastructure Metrics"
-            DBConnections[DB Connections]
-            KafkaLag[Kafka Consumer Lag]
-            RedisMemory[Redis Memory Usage]
-            JVMMetrics[JVM Metrics]
-        end
-        
-        subgraph "Business Metrics"
-            UserRegistrations[User Registrations]
-            ActiveUsers[Active Users]
-            ErrorRates[Error Rates]
-            HealthStatus[Health Status]
-        end
-    end
+sequenceDiagram
+  participant A as App + SDK
+  participant S as Server (Event Store)
+  participant P as Pulsar
+  participant EH as App EventHandlers
+
+  A->>S: Event(s)
+  S->>S: Persist (append-only)
+  S->>P: Publish to topic: <event.type>
+  P-->>A: Deliver to SDK subscription(s)
+  A->>EH: Dispatch to @EventHandler
 ```
 
-## Deployment Architecture
-
-### Docker Compose Infrastructure
-
+Topic creation and subscription
 ```mermaid
-graph TB
-    subgraph "Docker Compose Stack"
-        subgraph "Application Layer"
-            MainApp[Main Application:8080]
-            CustomServer[Custom Axon Server:8081]
-        end
-        
-        subgraph "Data Layer"
-            PostgresMain[PostgreSQL Main:5432]
-            PostgresServer[PostgreSQL Server:5432]
-            Redis[Redis:6379]
-        end
-        
-        subgraph "Messaging Layer"
-            Zookeeper[Zookeeper:2181]
-            Kafka[Kafka:9092]
-            KafkaUI[Kafka UI:8090]
-        end
-        
-        subgraph "Monitoring Layer"
-            Prometheus[Prometheus:9090]
-            Grafana[Grafana:3000]
-        end
-        
-        MainApp --> PostgresMain
-        MainApp --> Kafka
-        MainApp --> CustomServer
-        CustomServer --> PostgresServer
-        CustomServer --> Redis
-        CustomServer --> Kafka
-        Kafka --> Zookeeper
-        Prometheus --> MainApp
-        Prometheus --> CustomServer
-        Grafana --> Prometheus
-        KafkaUI --> Kafka
-    end
+flowchart LR
+  E[Event type: com.example.UserCreated]
+  S[Server]
+  P[Pulsar]
+  SDK[SDK in apps]
+
+  S -->|Ensure topic per type| P
+  SDK -->|Scan @EventHandler types| SDK
+  SDK -->|Subscribe to matching topics| P
 ```
 
-## Configuration Overview
+---
 
-### Application Properties Structure
+## Event Store: replay and snapshots
+- Append-only storage; events are versioned per aggregate.
+- Snapshots created at configured intervals to accelerate restore.
+- Replay options
+  - Per-aggregate rebuild
+  - Global projector rebuild (by event type and time window)
 
+---
+
+## Routing details
+- Consistent hashing key: aggregate identifier (or configured routing key).
+- Guarantees stickiness: all commands for one aggregate map to the same app instance.
+- Rebalancing on membership changes moves only a minimal subset of aggregates.
+
+---
+
+## SDK responsibilities (summary)
+- Annotation scanning and registration of handlers.
+- gRPC clients for commands, queries, registration, and heartbeats.
+- Pulsar consumer setup and dispatch to @EventHandler.
+- Serialization, error handling, retries, and backpressure.
+
+Minimal configuration (example)
 ```yaml
-# Main Application Configuration
-server:
-  port: 8080
-
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/axon_main
-  kafka:
-    bootstrap-servers: localhost:9092
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics,prometheus
-  endpoint:
-    health:
-      show-details: always
-
-custom:
-  axon:
-    server:
-      url: http://localhost:8081
+customAxon:
+  server:
+    host: localhost
+    port: 8124
+  pulsar:
+    serviceUrl: pulsar://localhost:6650
+  heartbeat:
+    intervalMs: 2000
 ```
 
-## Testing Strategy
+---
 
-### Test Pyramid
+## Operational notes
+- Multi-instance servers supported: place instances behind a TCP/HTTP load balancer; share Redis for membership and a common Event Store.
+- Scale apps horizontally; the server’s consistent-hash routing preserves aggregate stickiness.
+- Observability: expose standard JVM metrics/health on apps and server; add Pulsar consumer lag dashboards.
 
-```mermaid
-graph TB
-    subgraph "Test Pyramid"
-        E2E[End-to-End Tests]
-        Integration[Integration Tests]
-        Unit[Unit Tests]
-        
-        E2E --> Integration
-        Integration --> Unit
-        
-        subgraph "Test Types"
-            HealthTests[Health Check Tests]
-            MetricsTests[Metrics Tests]
-            CorrelationTests[Correlation ID Tests]
-            FlowTests[Complete Flow Tests]
-        end
-        
-        E2E --> HealthTests
-        Integration --> MetricsTests
-        Integration --> CorrelationTests
-        E2E --> FlowTests
-    end
-```
+---
 
-## Performance Characteristics
-
-### Throughput and Latency
-
-```mermaid
-graph LR
-    subgraph "Performance Metrics"
-        subgraph "Command Processing"
-            CmdThroughput[1000 commands/sec]
-            CmdLatency[< 50ms p95]
-        end
-        
-        subgraph "Query Processing"
-            QueryThroughput[5000 queries/sec]
-            QueryLatency[< 10ms p95]
-        end
-        
-        subgraph "Event Processing"
-            EventThroughput[2000 events/sec]
-            EventLatency[< 100ms p95]
-        end
-    end
-```
-
-## Security Considerations
-
-### Security Layers
-
-```mermaid
-graph TB
-    subgraph "Security Architecture"
-        subgraph "Network Security"
-            HTTPS[HTTPS/TLS]
-            Firewall[Network Firewall]
-        end
-        
-        subgraph "Application Security"
-            Authentication[Authentication]
-            Authorization[Authorization]
-            Validation[Input Validation]
-        end
-        
-        subgraph "Data Security"
-            Encryption[Data Encryption]
-            Secrets[Secret Management]
-            Audit[Audit Logging]
-        end
-        
-        HTTPS --> Authentication
-        Authentication --> Authorization
-        Authorization --> Validation
-        Validation --> Encryption
-        Encryption --> Secrets
-        Secrets --> Audit
-    end
-```
-
-This comprehensive documentation provides a complete visual overview of the Custom Axon Server implementation, showing all features, data flows, and architectural decisions. The system provides a robust, scalable, and observable alternative to the standard Axon Server with full monitoring and health checking capabilities.
+## Glossary
+- Custom Axon Server: Central router + event store + Pulsar publisher.
+- SDK/Library: Client runtime embedded in each app that handles registration, gRPC, and Pulsar subscriptions.
+- Aggregate stickiness: Commands for the same aggregate id always go to the same app instance.
+- Event Store: Authoritative source of events with replay and snapshot support.
+- Redis-backed registry: Shared membership and routing metadata enabling multi-instance servers.
