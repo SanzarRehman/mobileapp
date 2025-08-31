@@ -97,30 +97,30 @@ HA variant (multi-instance server with Redis-backed registry)
 ```mermaid
 flowchart TB
   subgraph Apps[Spring Boot Apps]
-    A1[Main App + SDK]\n@Command/@Query/@Event
-    A2[App #2 + SDK]\n@Command/@Query/@Event
-    A3[App #N + SDK]\n@Command/@Query/@Event
+    A1[Main App + SDK<br/>@Command/@Query/@Event]
+    A2[App #2 + SDK<br/>@Command/@Query/@Event]
+    A3[App #N + SDK<br/>@Command/@Query/@Event]
   end
 
   subgraph Server[Custom Axon Server (N instances)]
-    REG[Registration & Registry]\n(in-memory)
-    ROUTE[Router\n(consistent hash per aggregate)]
-    STORE[Event Store\n(replay, snapshot)]
-    PUB[Pulsar Publisher\n(topic per event type)]
+    REG[Registration & Registry<br/>(in-memory)]
+    ROUTE[Router<br/>(consistent hash per aggregate)]
+    STORE[Event Store<br/>(replay, snapshot)]
+    PUB[Pulsar Publisher<br/>(topic per event type)]
   end
 
-  REDIS[(Redis\nMembership store)]
-  PUL[Pulsar\nEvent topics by type]
+  REDIS[(Redis<br/>Membership store)]
+  PUL[Pulsar<br/>Event topics by type]
 
-  A1 <-- gRPC: register + heartbeat --> REG
-  A2 <-- gRPC: register + heartbeat --> REG
-  A3 <-- gRPC: register + heartbeat --> REG
+  A1 -->|gRPC: register + heartbeat| REG
+  A2 -->|gRPC: register + heartbeat| REG
+  A3 -->|gRPC: register + heartbeat| REG
 
   REG <--> REDIS
 
-  A1 -- gRPC: cmd/query --> ROUTE
-  A2 -- gRPC: cmd/query --> ROUTE
-  A3 -- gRPC: cmd/query --> ROUTE
+  A1 -->|gRPC: cmd/query| ROUTE
+  A2 -->|gRPC: cmd/query| ROUTE
+  A3 -->|gRPC: cmd/query| ROUTE
 
   ROUTE --> STORE
   STORE --> PUB
