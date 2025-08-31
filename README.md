@@ -67,6 +67,12 @@ HA variant (multi-instance server with Redis-backed registry)
 
 ---
 
+## Architecture Diagram
+
+![BRAXON Platform Architecture](./archiDiagram.svg)
+
+---
+
 ## Components
 - Custom Axon Server
     - gRPC endpoints for registration, command, query, and health streams.
