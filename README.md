@@ -22,7 +22,7 @@ Why it’s fast
 ## High-level diagram (ASCII)
 
 ```
-+-------------------+         gRPC          +-----------------------+
++-------------------+         rest          +-----------------------+
 |  Client(s)/APIs   | --------------------> |  Spring Boot App #1  |
 +-------------------+                       |  + Our SDK           |
                                             |  - @CommandHandler   |
